@@ -11,6 +11,11 @@ public class InsertOrUpdateStatement extends InsertStatement {
         this.primaryKey = primaryKey ;
     }
 
+    public InsertOrUpdateStatement(String catalogName, String schemaName, String tableName, String primaryKey, boolean updateOnly ) {
+        this(catalogName, schemaName, tableName,primaryKey);
+        this.updateOnly = updateOnly;
+    }
+    
     public String getPrimaryKey() {
         return primaryKey;
     }

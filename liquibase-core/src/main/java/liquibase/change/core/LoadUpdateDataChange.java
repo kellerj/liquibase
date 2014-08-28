@@ -40,7 +40,7 @@ public class LoadUpdateDataChange extends LoadDataChange {
         return primaryKey;
     }
 
-    @DatabaseChangeProperty(description = "Whether records with no matching database record should be ignored")
+    @DatabaseChangeProperty(description = "Whether records with no matching database record should be ignored", since = "3.3" )
     public Boolean getUpdateOnly() {
     	if ( updateOnly == null ) {
     		return false;
@@ -54,7 +54,7 @@ public class LoadUpdateDataChange extends LoadDataChange {
 
 	@Override
     protected InsertStatement createStatement(String catalogName, String schemaName, String tableName) {
-        return new InsertOrUpdateStatement(catalogName, schemaName, tableName, this.primaryKey);
+        return new InsertOrUpdateStatement(catalogName, schemaName, tableName, this.primaryKey, this.updateOnly);
     }
 
     @Override
