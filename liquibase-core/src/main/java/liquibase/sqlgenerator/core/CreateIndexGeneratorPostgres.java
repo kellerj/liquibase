@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 
+import liquibase.change.AddColumnConfig;
 import liquibase.database.Database;
 import liquibase.database.core.DB2Database;
 import liquibase.database.core.InformixDatabase;
@@ -55,11 +56,19 @@ public class CreateIndexGeneratorPostgres extends CreateIndexGenerator {
 	    }
 	    buffer.append("ON ");
 	    buffer.append(database.escapeTableName(statement.getTableCatalogName(), statement.getTableSchemaName(), statement.getTableName())).append("(");
-	    Iterator<String> iterator = Arrays.asList(statement.getColumns()).iterator();
+	    Iterator<AddColumnConfig> iterator = Arrays.asList(statement.getColumns()).iterator();
 	    while (iterator.hasNext()) {
-		    String column = iterator.next();
-		    buffer.append(database.escapeColumnName(statement.getTableCatalogName(), statement.getTableSchemaName(), statement.getTableName(), column));
-		    if (iterator.hasNext()) {
+		    AddColumnConfig column = iterator.next();
+            if (column.getComputed() == null) {
+                buffer.append(database.escapeColumnName(statement.getTableCatalogName(), statement.getTableSchemaName(), statement.getTableName(), column.getName(), false));
+            } else {
+                if (column.getComputed()) {
+                    buffer.append(column.getName());
+                } else {
+                    buffer.append(database.escapeColumnName(statement.getTableCatalogName(), statement.getTableSchemaName(), statement.getTableName(), column.getName()));
+                }
+            }
+            if (iterator.hasNext()) {
 			    buffer.append(", ");
 		    }
 	    }

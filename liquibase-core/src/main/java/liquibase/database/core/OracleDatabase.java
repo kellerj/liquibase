@@ -4,7 +4,9 @@ import liquibase.CatalogAndSchema;
 import liquibase.database.AbstractJdbcDatabase;
 import liquibase.database.DatabaseConnection;
 import liquibase.database.OfflineConnection;
+import liquibase.database.jvm.JdbcConnection;
 import liquibase.exception.DatabaseException;
+import liquibase.exception.UnexpectedLiquibaseException;
 import liquibase.executor.ExecutorService;
 import liquibase.logging.LogFactory;
 import liquibase.statement.DatabaseFunction;
@@ -15,8 +17,10 @@ import liquibase.structure.core.Catalog;
 import liquibase.structure.core.Schema;
 import liquibase.structure.core.Table;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -50,20 +54,40 @@ public class OracleDatabase extends AbstractJdbcDatabase {
 
     @Override
     public void setConnection(DatabaseConnection conn) {
+        Connection sqlConn = null;
         try {
-            Method wrappedConn = conn.getClass().getMethod("getWrappedConnection");
-            wrappedConn.setAccessible(true);
-            Connection sqlConn = (Connection) wrappedConn.invoke(conn);
-            Method method = sqlConn.getClass().getMethod("setRemarksReporting", Boolean.TYPE);
-            method.setAccessible(true);
-            method.invoke(sqlConn, true);
-
-            reservedWords.addAll(Arrays.asList(sqlConn.getMetaData().getSQLKeywords().toUpperCase().split(",\\s*")));
-            reservedWords.addAll(Arrays.asList("GROUP", "USER", "SESSION","PASSWORD", "RESOURCE", "START", "SIZE", "UID")); //more reserved words not returned by driver
+            /**
+             * Don't try to call getWrappedConnection if the conn instance is
+             * is not a JdbcConnection. This happens for OfflineConnection.
+             * @see <a href="https://liquibase.jira.com/browse/CORE-2192">CORE-2192</a>
+             **/
+            if (conn instanceof JdbcConnection) {
+                Method wrappedConn = conn.getClass().getMethod("getWrappedConnection");
+                wrappedConn.setAccessible(true);
+                sqlConn = (Connection) wrappedConn.invoke(conn);
+            }
         } catch (Exception e) {
-            LogFactory.getLogger().info("Could not set remarks reporting on OracleDatabase: " + e.getMessage());
-            ; //cannot set it. That is OK
+            throw new UnexpectedLiquibaseException(e);
         }
+
+        if (sqlConn != null) {
+            try {
+                Method method = sqlConn.getClass().getMethod("setRemarksReporting", Boolean.TYPE);
+                method.setAccessible(true);
+                method.invoke(sqlConn, true);
+            } catch (Exception e) {
+                LogFactory.getLogger().info("Could not set remarks reporting on OracleDatabase: " + e.getMessage());
+                ; //cannot set it. That is OK
+            }
+
+            try {
+                reservedWords.addAll(Arrays.asList(sqlConn.getMetaData().getSQLKeywords().toUpperCase().split(",\\s*")));
+            } catch (SQLException e) {
+                LogFactory.getLogger().info("Could get sql keywords on OracleDatabase: " + e.getMessage());
+                //can not get keywords. Continue on
+            }
+        }
+        reservedWords.addAll(Arrays.asList("GROUP", "USER", "SESSION","PASSWORD", "RESOURCE", "START", "SIZE", "UID", "DESC")); //more reserved words not returned by driver
         super.setConnection(conn);
     }
 
@@ -231,6 +255,19 @@ public class OracleDatabase extends AbstractJdbcDatabase {
                 return true;
             } else if (example.getName().startsWith("SYS_IOT_OVER")) { //oracle system table
                 return true;
+            } else if ((example.getName().startsWith("MDRT_") || example.getName().startsWith("MDRS_")) && example.getName().endsWith("$")) {
+                // CORE-1768 - Oracle creates these for spatial indices and will remove them when the index is removed.
+                return true;
+            } else if (example.getName().startsWith("MLOG$_")) { //Created by materliaized view logs for every table that is part of a materialized view. Not available for DDL operations.
+                return true;
+            } else if (example.getName().startsWith("RUPD$_")) { //Created by materialized view log tables using primary keys. Not available for DDL operations.
+                return true;
+            } else if (example.getName().startsWith("WM$_")) { //Workspace Manager backup tables.
+                return true;
+            } else if (example.getName().equals("CREATE$JAVA$LOB$TABLE")) { //This table contains the name of the Java object, the date it was loaded, and has a BLOB column to store the Java object.
+                return true;
+            } else if (example.getName().equals("JAVA$CLASS$MD5$TABLE")) { //This is a hash table that tracks the loading of Java objects into a schema.
+                return true;
             }
         }
 
@@ -302,5 +339,13 @@ public class OracleDatabase extends AbstractJdbcDatabase {
         }
 
         return userDefinedTypes;
+    }
+
+    @Override
+    public String generateDatabaseFunctionValue(DatabaseFunction databaseFunction) {
+        if (databaseFunction != null && databaseFunction.toString().equalsIgnoreCase("current_timestamp")) {
+            return databaseFunction.toString();
+        }
+        return super.generateDatabaseFunctionValue(databaseFunction);
     }
 }

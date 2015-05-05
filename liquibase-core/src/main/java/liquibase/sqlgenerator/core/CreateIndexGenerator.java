@@ -1,14 +1,16 @@
 package liquibase.sqlgenerator.core;
 
+import liquibase.change.AddColumnConfig;
 import liquibase.database.Database;
 import liquibase.database.core.*;
-import liquibase.sdk.database.MockDatabase;
-import liquibase.structure.core.Index;
 import liquibase.exception.ValidationErrors;
+import liquibase.exception.Warnings;
+import liquibase.sdk.database.MockDatabase;
 import liquibase.sql.Sql;
 import liquibase.sql.UnparsedSql;
 import liquibase.sqlgenerator.SqlGeneratorChain;
 import liquibase.statement.core.CreateIndexStatement;
+import liquibase.structure.core.Index;
 import liquibase.structure.core.Table;
 import liquibase.util.StringUtils;
 
@@ -26,10 +28,20 @@ public class CreateIndexGenerator extends AbstractSqlGenerator<CreateIndexStatem
         if (database instanceof HsqlDatabase) {
             validationErrors.checkRequiredField("name", createIndexStatement.getIndexName());
         }
-        if (!(database instanceof MSSQLDatabase || database instanceof OracleDatabase || database instanceof DB2Database || database instanceof PostgresDatabase || database instanceof MockDatabase)) {
-            validationErrors.checkDisallowedField("clustered", createIndexStatement.isClustered(), database);
-        }
         return validationErrors;
+    }
+
+    @Override
+    public Warnings warn(CreateIndexStatement createIndexStatement, Database database, SqlGeneratorChain sqlGeneratorChain) {
+
+        Warnings warnings = super.warn(createIndexStatement, database, sqlGeneratorChain);
+        if (!(database instanceof MSSQLDatabase || database instanceof OracleDatabase || database instanceof DB2Database || database instanceof PostgresDatabase || database instanceof MockDatabase)) {
+            if (createIndexStatement.isClustered() != null && createIndexStatement.isClustered()) {
+                warnings.addWarning("Creating clustered index not supported with "+database);
+            }
+        }
+
+        return warnings;
     }
 
     @Override
@@ -82,11 +94,19 @@ public class CreateIndexGenerator extends AbstractSqlGenerator<CreateIndexStatem
             buffer.append("CLUSTER ");
         }
 	    buffer.append(database.escapeTableName(statement.getTableCatalogName(), statement.getTableSchemaName(), statement.getTableName())).append("(");
-	    Iterator<String> iterator = Arrays.asList(statement.getColumns()).iterator();
+	    Iterator<AddColumnConfig> iterator = Arrays.asList(statement.getColumns()).iterator();
 	    while (iterator.hasNext()) {
-		    String column = iterator.next();
-		    buffer.append(database.escapeColumnName(statement.getTableCatalogName(), statement.getTableSchemaName(), statement.getTableName(), column));
-		    if (iterator.hasNext()) {
+            AddColumnConfig column = iterator.next();
+            if (column.getComputed() == null) {
+                buffer.append(database.escapeColumnName(statement.getTableCatalogName(), statement.getTableSchemaName(), statement.getTableName(), column.getName(), false));
+            } else {
+                if (column.getComputed()) {
+                    buffer.append(column.getName());
+                } else {
+                    buffer.append(database.escapeColumnName(statement.getTableCatalogName(), statement.getTableSchemaName(), statement.getTableName(), column.getName()));
+                }
+            }
+            if (iterator.hasNext()) {
 			    buffer.append(", ");
 		    }
 	    }

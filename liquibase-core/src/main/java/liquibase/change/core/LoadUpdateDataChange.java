@@ -23,6 +23,7 @@ import java.util.List;
         priority = ChangeMetaData.PRIORITY_DEFAULT, appliesTo = "table", since = "2.0")
 public class LoadUpdateDataChange extends LoadDataChange {
     private String primaryKey;
+    private Boolean onlyUpdate = Boolean.FALSE;
 
     @Override
     @DatabaseChangeProperty(description = "Name of the table to insert or update data in", requiredForDatabase = "all")
@@ -39,9 +40,21 @@ public class LoadUpdateDataChange extends LoadDataChange {
         return primaryKey;
     }
 
-    @Override
+    @DatabaseChangeProperty(description = "If true, records with no matching database record should be ignored", since = "3.3" )
+    public Boolean getOnlyUpdate() {
+    	if ( onlyUpdate == null ) {
+    		return false;
+    	}
+		return onlyUpdate;
+	}
+
+	public void setOnlyUpdate(Boolean onlyUpdate) {
+		this.onlyUpdate = (onlyUpdate == null ? Boolean.FALSE : onlyUpdate) ;
+	}
+
+	@Override
     protected InsertStatement createStatement(String catalogName, String schemaName, String tableName) {
-        return new InsertOrUpdateStatement(catalogName, schemaName, tableName, this.primaryKey);
+        return new InsertOrUpdateStatement(catalogName, schemaName, tableName, this.primaryKey, this.getOnlyUpdate());
     }
 
     @Override
@@ -66,9 +79,17 @@ public class LoadUpdateDataChange extends LoadDataChange {
 
         for(String thisPkColumn:pkColumns)
         {
-            where.append(database.escapeColumnName(insertOrUpdateStatement.getCatalogName(), insertOrUpdateStatement.getSchemaName(), insertOrUpdateStatement.getTableName(), thisPkColumn)).append(" = ");
             Object newValue = insertOrUpdateStatement.getColumnValues().get(thisPkColumn);
-            where.append(DataTypeFactory.getInstance().fromObject(newValue, database).objectToSql(newValue, database));
+            where.append(database.escapeColumnName(insertOrUpdateStatement.getCatalogName(),
+                        insertOrUpdateStatement.getSchemaName(),
+                        insertOrUpdateStatement.getTableName(),
+                        thisPkColumn)).append(newValue == null || newValue.toString().equalsIgnoreCase("NULL") ? " is " : " = ");
+
+            if (newValue == null || newValue.toString().equalsIgnoreCase("NULL")) {
+                where.append("NULL");
+            } else {
+                where.append(DataTypeFactory.getInstance().fromObject(newValue, database).objectToSql(newValue, database));
+            }
 
             where.append(" AND ");
         }

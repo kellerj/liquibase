@@ -2,6 +2,7 @@ package liquibase.servicelocator;
 
 import liquibase.logging.Logger;
 import liquibase.logging.core.DefaultLogger;
+import liquibase.util.FileUtil;
 import liquibase.util.StringUtils;
 
 import java.io.File;
@@ -24,6 +25,10 @@ public class DefaultPackageScanClassResolver implements PackageScanClassResolver
     private Set<PackageScanFilter> scanFilters;
     private Map<String, Set<Class>> allClassesByPackage = new HashMap<String, Set<Class>>();
     private Set<String> loadedPackages = new HashSet<String>();
+
+    private Map<File, File> unzippedJars = new HashMap<File, File>();
+
+    private Map<String, Set<String>> classFilesByLocation = new HashMap<String, Set<String>>();
 
     @Override
     public void addClassLoader(ClassLoader classLoader) {
@@ -223,7 +228,7 @@ public class DefaultPackageScanClassResolver implements PackageScanClassResolver
                     }
 
                     try {
-                        loadImplementationsInJar(packageName, stream, loader);
+                        loadImplementationsInJar(packageName, stream, loader, file);
                     } catch (IOException ioe) {
                         log.warning("Cannot search jar file '" + urlPath + "' for classes due to an IOException: " + ioe.getMessage(), ioe);
                     } finally {
@@ -332,23 +337,32 @@ public class DefaultPackageScanClassResolver implements PackageScanClassResolver
      * @param location a File object representing a directory
      */
     private void loadImplementationsInDirectory(String parent, File location, ClassLoader classLoader) {
-        File[] files = location.listFiles();
-        StringBuilder builder = null;
+        Set<String> classFiles = classFilesByLocation.get(location.toString());
+        if (classFiles == null) {
+            classFiles = new HashSet<String>();
 
-        for (File file : files) {
-            builder = new StringBuilder(100);
-            String name = file.getName();
-            if (name != null) {
-                name = name.trim();
-                builder.append(parent).append("/").append(name);
-                String packageOrClass = parent == null ? name : builder.toString();
+            File[] files = location.listFiles();
+            StringBuilder builder = null;
 
-                if (file.isDirectory()) {
-                    loadImplementationsInDirectory(packageOrClass, file, classLoader);
-                } else if (name.endsWith(".class")) {
-                    this.loadClass(packageOrClass, classLoader);
+            for (File file : files) {
+                builder = new StringBuilder(100);
+                String name = file.getName();
+                if (name != null) {
+                    name = name.trim();
+                    builder.append(parent).append("/").append(name);
+                    String packageOrClass = parent == null ? name : builder.toString();
+
+                    if (file.isDirectory()) {
+                        loadImplementationsInDirectory(packageOrClass, file, classLoader);
+                    } else if (name.endsWith(".class")) {
+                        classFiles.add(packageOrClass);
+                    }
                 }
             }
+        }
+
+        for (String packageOrClass : classFiles) {
+            this.loadClass(packageOrClass, classLoader);
         }
     }
 
@@ -388,8 +402,13 @@ public class DefaultPackageScanClassResolver implements PackageScanClassResolver
      *                be considered
      * @param stream  the inputstream of the jar file to be examined for classes
      */
-    protected void loadImplementationsInJar(String parent, InputStream stream, ClassLoader loader) throws IOException {
-        JarInputStream jarStream = null;
+    protected void loadImplementationsInJar(String parent, InputStream stream, ClassLoader loader, File parentFile) throws IOException {
+        Set<String> classFiles = classFilesByLocation.get(parentFile.toString());
+
+        if (classFiles == null) {
+            classFiles = new HashSet<String>();
+            classFilesByLocation.put(parentFile.toString(), classFiles);
+            JarInputStream jarStream = null;
             if (stream instanceof JarInputStream) {
                 jarStream = (JarInputStream) stream;
             } else {
@@ -399,13 +418,33 @@ public class DefaultPackageScanClassResolver implements PackageScanClassResolver
             JarEntry entry;
             while ((entry = jarStream.getNextJarEntry()) != null) {
                 String name = entry.getName();
-                if (name != null && name.contains(parent)) {
-                    name = name.trim();
-                    if (!entry.isDirectory() && name.endsWith(".class")) {
-                        loadClass(name, loader);
+                if (name != null) {
+                    if (name.endsWith(".jar")) { //in a nested jar
+                        log.debug("Found nested jar " + name);
+                        File unzippedParent = unzippedJars.get(parentFile);
+                        if (unzippedParent == null) {
+                            unzippedParent = FileUtil.unzip(parentFile);
+                            unzippedJars.put(parentFile, unzippedParent);
+                        }
+                        File nestedJar = new File(unzippedParent, name);
+                        JarInputStream nestedJarStream = new JarInputStream(new FileInputStream(nestedJar));
+                        try {
+                            loadImplementationsInJar(parent, nestedJarStream, loader, nestedJar);
+                        } finally {
+                            nestedJarStream.close();
+                        }
+                    } else if (!entry.isDirectory() && name.endsWith(".class")) {
+                        classFiles.add(name.trim());
                     }
                 }
             }
+        }
+
+        for (String name : classFiles) {
+            if (name.contains(parent)) {
+                loadClass(name, loader);
+            }
+        }
     }
 
     /**

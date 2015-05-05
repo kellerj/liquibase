@@ -1,8 +1,6 @@
 package liquibase.sdk.watch;
 
-import com.sun.org.apache.xpath.internal.SourceTree;
-import liquibase.changelog.ChangeLogHistoryServiceFactory;
-import liquibase.changelog.StandardChangeLogHistoryService;
+import liquibase.change.ColumnConfig;
 import liquibase.command.AbstractCommand;
 import liquibase.command.CommandValidationErrors;
 import liquibase.database.Database;
@@ -116,7 +114,7 @@ public class WatchCommand extends AbstractCommand {
         CompositeResourceAccessor resourceAccessor = new CompositeResourceAccessor(
                 new CommandLineResourceAccessor(new URLClassLoader(jarUrls.toArray(new URL[jarUrls.size()]), this.getClass().getClassLoader()))
         );
-        Database database = DatabaseFactory.getInstance().openDatabase(url, username, password, resourceAccessor);
+        Database database = DatabaseFactory.getInstance().openDatabase(url, username, password, null, resourceAccessor);
 
         ResourceHandler staticHandler = new ResourceHandler();
         staticHandler.setDirectoriesListed(false);
@@ -167,7 +165,7 @@ public class WatchCommand extends AbstractCommand {
                         lockService.waitForLock();
                         List<Map<String, ?>> rows;
                         try {
-                            SelectFromDatabaseChangeLogStatement select = new SelectFromDatabaseChangeLogStatement("COUNT(*) AS ROW_COUNT", "MAX(DATEEXECUTED) AS LAST_EXEC");
+                            SelectFromDatabaseChangeLogStatement select = new SelectFromDatabaseChangeLogStatement(new ColumnConfig().setName("COUNT(*) AS ROW_COUNT", true), new ColumnConfig().setName("MAX(DATEEXECUTED) AS LAST_EXEC", true));
                             rows = executor.queryForList(select);
                         } finally {
                             lockService.releaseLock();

@@ -3,6 +3,7 @@ package liquibase.snapshot.jvm;
 import liquibase.CatalogAndSchema;
 import liquibase.database.AbstractJdbcDatabase;
 import liquibase.database.Database;
+import liquibase.database.core.InformixDatabase;
 import liquibase.exception.DatabaseException;
 import liquibase.snapshot.CachedRow;
 import liquibase.snapshot.InvalidExampleException;
@@ -53,7 +54,7 @@ public class ViewSnapshotGenerator extends JdbcSnapshotGenerator {
 
         List<CachedRow> viewsMetadataRs = null;
         try {
-            viewsMetadataRs = ((JdbcDatabaseSnapshot) snapshot).getMetaData().getTables(((AbstractJdbcDatabase) database).getJdbcCatalogName(schema), ((AbstractJdbcDatabase) database).getJdbcSchemaName(schema), example.getName(), new String[]{"VIEW"});
+            viewsMetadataRs = ((JdbcDatabaseSnapshot) snapshot).getMetaData().getViews(((AbstractJdbcDatabase) database).getJdbcCatalogName(schema), ((AbstractJdbcDatabase) database).getJdbcSchemaName(schema), example.getName());
             if (viewsMetadataRs.size() > 0) {
                 CachedRow row = viewsMetadataRs.get(0);
                 String rawViewName = row.getString("TABLE_NAME");
@@ -64,7 +65,6 @@ public class ViewSnapshotGenerator extends JdbcSnapshotGenerator {
                     remarks = remarks.replace("''", "'"); //come back escaped sometimes
                 }
 
-
                 View view = new View().setName(cleanNameFromDatabase(rawViewName, database));
                 view.setRemarks(remarks);
 
@@ -73,10 +73,23 @@ public class ViewSnapshotGenerator extends JdbcSnapshotGenerator {
 
                 try {
                     String definition = database.getViewDefinition(schemaFromJdbcInfo, view.getName());
+
                     if (definition.startsWith("FULL_DEFINITION: ")) {
                         definition = definition.replaceFirst("^FULL_DEFINITION: ", "");
                         view.setContainsFullDefinition(true);
                     }
+
+                    if (database instanceof InformixDatabase) {
+
+                        // Cleanup
+                        definition = definition.trim();
+                        definition = definition.replaceAll("\\s*,\\s*", ", ");
+                        definition = definition.replaceAll("\\s*;", "");
+
+                        // Strip the schema definition because it can optionally be included in the tag attribute
+                        definition = definition.replaceAll("(?i)\""+view.getSchema().getName()+"\"\\.", "");
+                    }
+
                     view.setDefinition(definition);
                 } catch (DatabaseException e) {
                     throw new DatabaseException("Error getting " + database.getConnection().getURL() + " view with " + new GetViewDefinitionStatement(view.getSchema().getCatalogName(), view.getSchema().getName(), rawViewName), e);
@@ -102,7 +115,7 @@ public class ViewSnapshotGenerator extends JdbcSnapshotGenerator {
             Database database = snapshot.getDatabase();
             List<CachedRow> viewsMetadataRs = null;
             try {
-                viewsMetadataRs = ((JdbcDatabaseSnapshot) snapshot).getMetaData().getTables(((AbstractJdbcDatabase) database).getJdbcCatalogName(schema), ((AbstractJdbcDatabase) database).getJdbcSchemaName(schema), null, new String[]{"VIEW"});
+                viewsMetadataRs = ((JdbcDatabaseSnapshot) snapshot).getMetaData().getViews(((AbstractJdbcDatabase) database).getJdbcCatalogName(schema), ((AbstractJdbcDatabase) database).getJdbcSchemaName(schema), null);
                 for (CachedRow row : viewsMetadataRs) {
                     schema.addDatabaseObject(new View().setName(row.getString("TABLE_NAME")).setSchema(schema));
                 }

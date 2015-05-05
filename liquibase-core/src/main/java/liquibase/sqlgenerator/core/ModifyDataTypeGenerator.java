@@ -1,6 +1,7 @@
 package liquibase.sqlgenerator.core;
 
 import liquibase.datatype.DataTypeFactory;
+import liquibase.datatype.DatabaseDataType;
 import liquibase.exception.Warnings;
 import liquibase.sqlgenerator.SqlGeneratorChain;
 import liquibase.statement.core.ModifyDataTypeStatement;
@@ -51,12 +52,19 @@ public class ModifyDataTypeGenerator extends AbstractSqlGenerator<ModifyDataType
         alterTable += " " + getModifyString(database) + " ";
 
         // add column name
-        alterTable += database.escapeColumnName(statement.getCatalogName(), statement.getSchemaName(), statement.getTableName(), statement.getColumnName());
+        String columnName = database.escapeColumnName(statement.getCatalogName(), statement.getSchemaName(), statement.getTableName(), statement.getColumnName());
+        alterTable += columnName;
 
         alterTable += getPreDataTypeString(database); // adds a space if nothing else
 
         // add column type
-        alterTable += DataTypeFactory.getInstance().fromDescription(statement.getNewDataType(), database).toDatabaseDataType(database);
+        DatabaseDataType newDataType = DataTypeFactory.getInstance().fromDescription(statement.getNewDataType(), database).toDatabaseDataType(database);
+
+        alterTable += newDataType;
+
+        if (database instanceof PostgresDatabase) {
+            alterTable += " USING ("+columnName+"::"+newDataType+")";
+        }
 
         return new Sql[]{new UnparsedSql(alterTable, getAffectedTable(statement))};
     }

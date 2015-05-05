@@ -260,8 +260,6 @@ public class Liquibase {
             output.flush();
         } catch (IOException e) {
             throw new LiquibaseException(e);
-        } finally {
-            lockService.releaseLock();
         }
 
         ExecutorService.getInstance().setExecutor(database, oldTemplate);
@@ -388,9 +386,10 @@ public class Liquibase {
             checkLiquibaseTables(false, changeLog, contexts, labelExpression);
 
             changeLog.validate(database, contexts, labelExpression);
+            changeLog.setIgnoreClasspathPrefix(ignoreClasspathPrefix);
 
             ChangeLogIterator logIterator = new ChangeLogIterator(database.getRanChangeSetList(), changeLog,
-                    new AlreadyRanChangeSetFilter(database.getRanChangeSetList()),
+                    new AlreadyRanChangeSetFilter(database.getRanChangeSetList(), ignoreClasspathPrefix),
                     new ContextChangeSetFilter(contexts),
                     new LabelChangeSetFilter(labelExpression),
                     new DbmsChangeSetFilter(database),
@@ -455,11 +454,12 @@ public class Liquibase {
             checkLiquibaseTables(false, changeLog, contexts, labelExpression);
 
             changeLog.validate(database, contexts, labelExpression);
+            changeLog.setIgnoreClasspathPrefix(ignoreClasspathPrefix);
 
             List<RanChangeSet> ranChangeSetList = database.getRanChangeSetList();
             ChangeLogIterator logIterator = new ChangeLogIterator(ranChangeSetList, changeLog,
                     new AfterTagChangeSetFilter(tagToRollBackTo, ranChangeSetList),
-                    new AlreadyRanChangeSetFilter(ranChangeSetList),
+                    new AlreadyRanChangeSetFilter(ranChangeSetList, ignoreClasspathPrefix),
                     new ContextChangeSetFilter(contexts),
                     new LabelChangeSetFilter(labelExpression),
                     new DbmsChangeSetFilter(database));
@@ -510,11 +510,12 @@ public class Liquibase {
             DatabaseChangeLog changeLog = getDatabaseChangeLog();
             checkLiquibaseTables(false, changeLog, contexts, labelExpression);
             changeLog.validate(database, contexts, labelExpression);
+            changeLog.setIgnoreClasspathPrefix(ignoreClasspathPrefix);
 
             List<RanChangeSet> ranChangeSetList = database.getRanChangeSetList();
             ChangeLogIterator logIterator = new ChangeLogIterator(ranChangeSetList, changeLog,
                     new ExecutedAfterChangeSetFilter(dateToRollBackTo, ranChangeSetList),
-                    new AlreadyRanChangeSetFilter(ranChangeSetList),
+                    new AlreadyRanChangeSetFilter(ranChangeSetList, ignoreClasspathPrefix),
                     new ContextChangeSetFilter(contexts),
                     new LabelChangeSetFilter(labelExpression),
                     new DbmsChangeSetFilter(database));
@@ -746,11 +747,7 @@ public class Liquibase {
         } catch (Exception e) {
             throw new DatabaseException(e);
         } finally {
-            try {
-                LockServiceFactory.getInstance().getLockService(database).releaseLock();
-            } catch (LockException e) {
-                log.severe("Unable to release lock: " + e.getMessage());
-            }
+            LockServiceFactory.getInstance().getLockService(database).destroy();
             resetServices();
         }
     }

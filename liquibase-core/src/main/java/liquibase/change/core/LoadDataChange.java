@@ -4,7 +4,6 @@ import liquibase.change.*;
 import liquibase.database.AbstractJdbcDatabase;
 import liquibase.database.Database;
 import liquibase.exception.UnexpectedLiquibaseException;
-import liquibase.exception.ValidationErrors;
 import liquibase.exception.Warnings;
 import liquibase.logging.LogFactory;
 import liquibase.logging.Logger;
@@ -20,7 +19,7 @@ import liquibase.util.csv.CSVReader;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
+import liquibase.util.BooleanParser;
 
 
 @DatabaseChange(name="loadData",
@@ -39,10 +38,10 @@ public class LoadDataChange extends AbstractChange implements ChangeWithColumns<
     private String schemaName;
     private String tableName;
     private String file;
+    private Boolean relativeToChangelogFile;
     private String encoding = null;
     private String separator = liquibase.util.csv.opencsv.CSVReader.DEFAULT_SEPARATOR + "";
 	private String quotchar = liquibase.util.csv.opencsv.CSVReader.DEFAULT_QUOTE_CHARACTER + "";
-
 
     private List<LoadDataColumnConfig> columns = new ArrayList<LoadDataColumnConfig>();
 
@@ -92,6 +91,14 @@ public class LoadDataChange extends AbstractChange implements ChangeWithColumns<
 
     public void setFile(String file) {
         this.file = file;
+    }
+
+    public Boolean isRelativeToChangelogFile() {
+        return relativeToChangelogFile;
+    }
+
+    public void setRelativeToChangelogFile(Boolean relativeToChangelogFile) {
+        this.relativeToChangelogFile = relativeToChangelogFile;
     }
 
     @DatabaseChangeProperty(exampleValue = "UTF-8", description = "Encoding of the CSV file (defaults to UTF-8)")
@@ -187,7 +194,7 @@ public class LoadDataChange extends AbstractChange implements ChangeWithColumns<
                         } else if (columnConfig.getType() != null) {
                             ColumnConfig valueConfig = new ColumnConfig();
                             if (columnConfig.getType().equalsIgnoreCase("BOOLEAN")) {
-                                valueConfig.setValueBoolean(Boolean.parseBoolean(value.toString().toLowerCase()));
+                                valueConfig.setValueBoolean(BooleanParser.parseBoolean(value.toString().toLowerCase()));
                             } else if (columnConfig.getType().equalsIgnoreCase("NUMERIC")) {
                                 valueConfig.setValueNumeric(value.toString());
                             } else if (columnConfig.getType().toLowerCase().contains("date") ||columnConfig.getType().toLowerCase().contains("time")) {
@@ -250,7 +257,7 @@ public class LoadDataChange extends AbstractChange implements ChangeWithColumns<
         if (resourceAccessor == null) {
             throw new UnexpectedLiquibaseException("No file resourceAccessor specified for "+getFile());
         }
-        InputStream stream = StreamUtil.singleInputStream(getFile(), resourceAccessor);
+        InputStream stream = StreamUtil.openStream(file, isRelativeToChangelogFile(), getChangeSet(), resourceAccessor);
         if (stream == null) {
             return null;
         }
@@ -310,7 +317,7 @@ public class LoadDataChange extends AbstractChange implements ChangeWithColumns<
     public CheckSum generateCheckSum() {
         InputStream stream = null;
         try {
-            stream = StreamUtil.singleInputStream(getFile(), getResourceAccessor());
+            stream = StreamUtil.openStream(file, isRelativeToChangelogFile(), getChangeSet(), getResourceAccessor());
             if (stream == null) {
                 throw new UnexpectedLiquibaseException(getFile() + " could not be found");
             }

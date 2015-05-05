@@ -12,10 +12,8 @@ import liquibase.configuration.GlobalConfiguration;
 import liquibase.database.Database;
 import liquibase.diff.compare.CompareControl;
 import liquibase.diff.output.DiffOutputControl;
-import liquibase.exception.CommandLineParsingException;
-import liquibase.exception.DatabaseException;
-import liquibase.exception.LiquibaseException;
-import liquibase.exception.ValidationFailedException;
+import liquibase.diff.output.StandardObjectChangeFilter;
+import liquibase.exception.*;
 import liquibase.lockservice.LockService;
 import liquibase.lockservice.LockServiceFactory;
 import liquibase.logging.LogFactory;
@@ -53,8 +51,8 @@ public class Main {
     protected String url;
     protected String databaseClass;
     protected String defaultSchemaName;
-    protected String outputDefaultSchema = "true";
-    protected String outputDefaultCatalog = "true";
+    protected String outputDefaultSchema;
+    protected String outputDefaultCatalog;
 	protected String liquibaseCatalogName;
 	protected String liquibaseSchemaName;
     protected String defaultCatalogName;
@@ -63,8 +61,10 @@ public class Main {
     protected String contexts;
     protected String labels;
     protected String driverPropertiesFile;
+    protected String propertyProviderClass = null;
     protected Boolean promptForNonLocalDatabase = null;
     protected Boolean includeSystemClasspath;
+    protected Boolean strict = Boolean.TRUE;
     protected String defaultsFile = "liquibase.properties";
 
     protected String diffTypes;
@@ -86,6 +86,8 @@ public class Main {
     protected String logFile;
 
     protected Map<String, Object> changeLogParameters = new HashMap<String, Object>();
+
+    protected String outputFile;
 
 	public static void main(String args[]) throws CommandLineParsingException, IOException {
 		try {
@@ -287,16 +289,19 @@ public class Main {
             if (commandParams.size() > 0) {
                 for (String cmdParm : commandParams) {
                     if (!cmdParm.startsWith("--referenceUsername")
-                        && !cmdParm.startsWith("--referencePassword")
-                        && !cmdParm.startsWith("--referenceDriver")
-                        && !cmdParm.startsWith("--referenceDefaultCatalogName")
-                        && !cmdParm.startsWith("--referenceDefaultSchemaName")
-                            && !cmdParm.startsWith("--includeSchema")
-                            && !cmdParm.startsWith("--includeCatalog")
-                            && !cmdParm.startsWith("--includeTablespace")
-                            && !cmdParm.startsWith("--schemas")
-                            && !cmdParm.startsWith("--referenceUrl")) {
-                        messages.add("unexpected command parameter: "+cmdParm);
+                      && !cmdParm.startsWith("--referencePassword")
+                      && !cmdParm.startsWith("--referenceDriver")
+                      && !cmdParm.startsWith("--referenceDefaultCatalogName")
+                      && !cmdParm.startsWith("--referenceDefaultSchemaName")
+                      && !cmdParm.startsWith("--includeSchema")
+                      && !cmdParm.startsWith("--includeCatalog")
+                      && !cmdParm.startsWith("--includeTablespace")
+                      && !cmdParm.startsWith("--schemas")
+                      && !cmdParm.startsWith("--referenceUrl")
+                      && !cmdParm.startsWith("--excludeObjects")
+                      && !cmdParm.startsWith("--includeObjects")
+                      && !cmdParm.startsWith("--diffTypes")) {
+                      messages.add("unexpected command parameter: "+cmdParm);
                     }
                 }
             }
@@ -409,6 +414,9 @@ public class Main {
     protected void parsePropertiesFile(InputStream propertiesInputStream) throws IOException, CommandLineParsingException {
         Properties props = new Properties();
         props.load(propertiesInputStream);
+        if(props.containsKey("strict")){
+            strict = Boolean.valueOf(props.getProperty("strict"));
+        }
 
         for (Map.Entry entry : props.entrySet()) {
             try {
@@ -429,6 +437,12 @@ public class Main {
                             field.set(this, value);
                         }
                     }
+                }
+            } catch (NoSuchFieldException nsfe){
+                if(strict){
+                    throw new CommandLineParsingException("Unknown parameter: '" + entry.getKey() + "'");
+                } else {
+                    LogFactory.getInstance().getLog().info("Ignored parameter: " + entry.getKey());
                 }
             } catch (Exception e) {
                 throw new CommandLineParsingException("Unknown parameter: '" + entry.getKey() + "'");
@@ -544,6 +558,8 @@ public class Main {
         stream.println(" --driver=<jdbc.driver.ClassName>           Database driver class name");
         stream.println(" --databaseClass=<database.ClassName>       custom liquibase.database.Database");
         stream.println("                                            implementation to use");
+        stream.println(" --propertyProviderClass=<properties.ClassName>  custom Properties");
+        stream.println("                                            implementation to use");
         stream.println(" --defaultSchemaName=<name>                 Default database schema to use");
         stream.println(" --contexts=<value>                         ChangeSet contexts to execute");
         stream.println(" --labels=<expression>                      Expression defining labeled");
@@ -576,6 +592,9 @@ public class Main {
         stream.println("                                            include the catalog name, even if");
         stream.println("                                            it is the default catalog.");
         stream.println("                                            Defaults to true");
+        stream.println(" --outputFile=<file>                        File to write output to for commands");
+        stream.println("                                            that write output, e.g. updateSQL.");
+        stream.println("                                            If not specified, writes to sysout.");
         stream.println(" --help                                     Prints this message");
         stream.println(" --version                                  Prints this version information");
         stream.println("");
@@ -716,6 +735,17 @@ public class Main {
             this.includeSystemClasspath = Boolean.TRUE;
         }
 
+        if (this.outputDefaultCatalog == null) {
+            this.outputDefaultCatalog = "true";
+        }
+        if (this.outputDefaultSchema == null) {
+            this.outputDefaultSchema = "true";
+        }
+        if (this.defaultsFile == null) {
+            this.defaultsFile = "liquibase.properties";
+        }
+
+
     }
 
     protected void configureClassLoader() throws CommandLineParsingException {
@@ -852,7 +882,7 @@ public class Main {
         FileSystemResourceAccessor fsOpener = new FileSystemResourceAccessor();
         CommandLineResourceAccessor clOpener = new CommandLineResourceAccessor(classLoader);
         Database database = CommandLineUtils.createDatabaseObject(classLoader, this.url,
-            this.username, this.password, this.driver, this.defaultCatalogName,this.defaultSchemaName,  Boolean.parseBoolean(outputDefaultCatalog), Boolean.parseBoolean(outputDefaultSchema), this.databaseClass, this.driverPropertiesFile, this.liquibaseCatalogName, this.liquibaseSchemaName);
+            this.username, this.password, this.driver, this.defaultCatalogName,this.defaultSchemaName,  Boolean.parseBoolean(outputDefaultCatalog), Boolean.parseBoolean(outputDefaultSchema), this.databaseClass, this.driverPropertiesFile, this.propertyProviderClass, this.liquibaseCatalogName, this.liquibaseSchemaName);
         try {
 
 
@@ -861,7 +891,19 @@ public class Main {
             boolean includeCatalog = Boolean.parseBoolean(getCommandParam("includeCatalog", "false"));
             boolean includeSchema = Boolean.parseBoolean(getCommandParam("includeSchema", "false"));
             boolean includeTablespace = Boolean.parseBoolean(getCommandParam("includeTablespace", "false"));
+            String excludeObjects = StringUtils.trimToNull(getCommandParam("excludeObjects", null));
+            String includeObjects = StringUtils.trimToNull(getCommandParam("includeObjects", null));
             DiffOutputControl diffOutputControl = new DiffOutputControl(includeCatalog, includeSchema, includeTablespace);
+
+            if (excludeObjects != null && includeObjects != null) {
+                throw new UnexpectedLiquibaseException("Cannot specify both excludeObjects and includeObjects");
+            }
+            if (excludeObjects != null) {
+                diffOutputControl.setObjectChangeFilter(new StandardObjectChangeFilter(StandardObjectChangeFilter.FilterType.EXCLUDE, excludeObjects));
+            }
+            if (includeObjects != null) {
+                diffOutputControl.setObjectChangeFilter(new StandardObjectChangeFilter(StandardObjectChangeFilter.FilterType.INCLUDE, includeObjects));
+            }
 
             String referenceSchemaNames = getCommandParam("schemas", null);
             CompareControl.SchemaComparison[] finalSchemaComparisons;
@@ -1124,7 +1166,7 @@ public class Main {
             throw new CommandLineParsingException("referenceUrl parameter missing");
         }
 
-        return CommandLineUtils.createDatabaseObject(classLoader, url, username, password, driver, defaultCatalogName, defaultSchemaName, Boolean.parseBoolean(outputDefaultCatalog), Boolean.parseBoolean(outputDefaultSchema), null, null, this.liquibaseCatalogName, this.liquibaseSchemaName);
+        return CommandLineUtils.createDatabaseObject(classLoader, url, username, password, driver, defaultCatalogName, defaultSchemaName, Boolean.parseBoolean(outputDefaultCatalog), Boolean.parseBoolean(outputDefaultSchema), null, null, this.propertyProviderClass, this.liquibaseCatalogName, this.liquibaseSchemaName);
 //        Driver driverObject;
 //        try {
 //            driverObject = (Driver) Class.forName(driver, true, classLoader).newInstance();
@@ -1152,10 +1194,20 @@ public class Main {
 //        return database;
     }
 
-    private Writer getOutputWriter() throws UnsupportedEncodingException {
+    private Writer getOutputWriter() throws UnsupportedEncodingException, IOException {
         String charsetName = LiquibaseConfiguration.getInstance().getConfiguration(GlobalConfiguration.class).getOutputEncoding();
 
-        return new OutputStreamWriter(System.out, charsetName);
+        if (outputFile != null) {
+            try {
+                FileOutputStream fileOut = new FileOutputStream(outputFile, false);
+                return new OutputStreamWriter(fileOut, charsetName);
+            } catch (IOException e) {
+                System.err.printf("Could not create output file %s\n", outputFile);
+                throw e;
+            }
+        } else {
+            return new OutputStreamWriter(System.out, charsetName);
+        }
     }
 
     public boolean isWindows() {

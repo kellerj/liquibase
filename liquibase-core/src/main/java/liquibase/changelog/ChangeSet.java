@@ -17,6 +17,7 @@ import liquibase.executor.Executor;
 import liquibase.executor.ExecutorService;
 import liquibase.logging.LogFactory;
 import liquibase.logging.Logger;
+import liquibase.parser.NamespaceDetails;
 import liquibase.parser.core.ParsedNode;
 import liquibase.parser.core.ParsedNodeException;
 import liquibase.precondition.Conditional;
@@ -267,9 +268,15 @@ public class ChangeSet implements Conditional, LiquibaseSerializable {
         this.comments = StringUtils.trimToNull(this.comments);
 
         String objectQuotingStrategyString = StringUtils.trimToNull(node.getChildValue(null, "objectQuotingStrategy", String.class));
-        this.objectQuotingStrategy = ObjectQuotingStrategy.LEGACY;
+        if (changeLog != null) {
+            this.objectQuotingStrategy = changeLog.getObjectQuotingStrategy();
+        }
         if (objectQuotingStrategyString != null) {
             this.objectQuotingStrategy = ObjectQuotingStrategy.valueOf(objectQuotingStrategyString);
+        }
+
+        if (this.objectQuotingStrategy == null) {
+            this.objectQuotingStrategy = ObjectQuotingStrategy.LEGACY;
         }
 
         this.filePath = StringUtils.trimToNull(node.getChildValue(null, "logicalFilePath", String.class));
@@ -604,22 +611,20 @@ public class ChangeSet implements Conditional, LiquibaseSerializable {
             }
             
             RanChangeSet ranChangeSet = database.getRanChangeSet(this);
-            if (rollBackChanges != null && rollBackChanges.size() > 0) {
+            if (hasCustomRollbackChanges()) {
+                
+                final List<SqlStatement> statements = new LinkedList<SqlStatement>();
                 for (Change rollback : rollBackChanges) {
                     if (((rollback instanceof DbmsTargetedChange)) && !DatabaseList.definitionMatches(((DbmsTargetedChange) rollback).getDbms(), database, true)) {
                         continue;
                     }
-                    SqlStatement[] statements = rollback.generateStatements(database);
-                    if (statements == null) {
-                        continue;
+                    SqlStatement[] changeStatements = rollback.generateStatements(database);
+                    if (changeStatements != null) {
+                        statements.addAll(Arrays.asList(changeStatements));
                     }
-                    for (SqlStatement statement : statements) {
-                        try {
-                            executor.execute(statement, sqlVisitors);
-                        } catch (DatabaseException e) {
-                            throw new RollbackFailedException("Error executing custom SQL [" + statement + "]", e);
-                        }
-                    }
+                }
+                if (!statements.isEmpty()) {
+                    database.executeRollbackStatements(statements.toArray(new SqlStatement[]{}), sqlVisitors);
                 }
 
             } else {
@@ -655,6 +660,13 @@ public class ChangeSet implements Conditional, LiquibaseSerializable {
 
     }
 
+    /**
+     * Returns whether custom rollback steps are specified for this changeSet, or whether auto-generated ones should be used
+     */
+    protected boolean hasCustomRollbackChanges() {
+        return rollBackChanges != null && rollBackChanges.size() > 0;
+    }
+    
     /**
      * Returns an unmodifiable list of changes.  To add one, use the addRefactoing method.
      */
@@ -880,6 +892,13 @@ public class ChangeSet implements Conditional, LiquibaseSerializable {
         this.changeLogParameters = changeLogParameters;
     }
 
+    /**
+     * Called to update file path from database entry when rolling back and ignoreClasspathPrefix is true.
+     */
+    public void setFilePath(String filePath) {
+        this.filePath = filePath;
+    }
+
     public ObjectQuotingStrategy getObjectQuotingStrategy() {
         return objectQuotingStrategy;
     }
@@ -901,7 +920,8 @@ public class ChangeSet implements Conditional, LiquibaseSerializable {
                 "dbms",
                 "comment",
                 "changes",
-                "rollback"));
+                "rollback",
+                "objectQuotingStrategy"));
 
     }
 
@@ -966,6 +986,13 @@ public class ChangeSet implements Conditional, LiquibaseSerializable {
             return StringUtils.trimToNull(this.getComments());
         }
 
+        if (field.equals("objectQuotingStrategy")) {
+            if (this.getObjectQuotingStrategy() == null) {
+                return null;
+            }
+            return this.getObjectQuotingStrategy().toString();
+        }
+
         if (field.equals("changes")) {
             return getChanges();
         }
@@ -996,6 +1023,12 @@ public class ChangeSet implements Conditional, LiquibaseSerializable {
     public String getSerializedObjectNamespace() {
         return STANDARD_CHANGELOG_NAMESPACE;
     }
+
+    @Override
+    public String getSerializableFieldNamespace(String field) {
+        return getSerializedObjectNamespace();
+    }
+
 
     @Override
     public boolean equals(Object obj) {

@@ -22,12 +22,12 @@ public class ColumnConfigTest extends Specification {
         when:
         def table = new Table();
 
-        table.setPrimaryKey(new PrimaryKey().addColumnName(0, "colName").setName("pk_name").setTablespace("pk_tablespace"));
-        table.getUniqueConstraints().add(new UniqueConstraint().setName("uq1").addColumn(0, "otherCol"));
-        table.getUniqueConstraints().add(new UniqueConstraint().setName("uq2").addColumn(0, "colName"));
+        table.setPrimaryKey(new PrimaryKey().addColumn(0, new Column("colName")).setName("pk_name").setTablespace("pk_tablespace"));
+        table.getUniqueConstraints().add(new UniqueConstraint().setName("uq1").addColumn(0, new Column("otherCol")));
+        table.getUniqueConstraints().add(new UniqueConstraint().setName("uq2").addColumn(0, new Column("colName")));
 
-        table.getOutgoingForeignKeys().add(new ForeignKey().setName("fk1").setForeignKeyColumns("otherCol"));
-        table.getOutgoingForeignKeys().add(new ForeignKey().setName("fk2").setForeignKeyColumns("colName").setPrimaryKeyTable(new Table().setName("otherTable")).setPrimaryKeyColumns("id"));
+        table.getOutgoingForeignKeys().add(new ForeignKey().setName("fk1").setForeignKeyColumns([new Column("otherCol")]));
+        table.getOutgoingForeignKeys().add(new ForeignKey().setName("fk2").setForeignKeyColumns([new Column("colName")]).setPrimaryKeyTable(new Table().setName("otherTable")).setPrimaryKeyColumns([new Column("id")]));
 
         Column column = new Column();
         column.setName("colName");
@@ -78,17 +78,7 @@ public class ColumnConfigTest extends Specification {
         config.getDefaultValue() == null
         config.getRemarks() == null
         config.getType() == "BIGINT"
-        config.getConstraints().isNullable() == null //nullable could be unknown
-
-        config.getConstraints().isUnique() == false //we know it is unique or not, cannot return null
-        config.getConstraints().getUniqueConstraintName() == null
-
-        config.getConstraints().isPrimaryKey() == false //we know it is unique or not, cannot return null
-        config.getConstraints().getPrimaryKeyName() == null
-        config.getConstraints().getPrimaryKeyTablespace() == null
-
-        config.getConstraints().getForeignKeyName() == null
-        config.getConstraints().getReferences() == null
+        config.getConstraints()  == null
 
         config.isAutoIncrement() == false  //we know it is unique or not, cannot return null
         config.getStartWith() == null
@@ -140,10 +130,12 @@ public class ColumnConfigTest extends Specification {
 
     def setValueNumeric_null() {
         expect:
-        new ColumnConfig().setValueNumeric((String) null).getValueNumeric() == null
+        def column = new ColumnConfig().setValueNumeric((String) null)
+        column.getValueNumeric() == null
         new ColumnConfig().setValueNumeric("null").getValueNumeric() == null
         new ColumnConfig().setValueNumeric("NULL").getValueNumeric() == null
-        new ColumnConfig().setValueNumeric((Number) null).getValueNumeric() == null
+        def column2 = new ColumnConfig().setValueNumeric((Number) null)
+        column2.getValueNumeric() == null
     }
 
     def setValueNumeric_wrapped() {
@@ -175,7 +167,8 @@ public class ColumnConfigTest extends Specification {
 
     def void setValueBoolean() {
         expect:
-        new ColumnConfig().setValueBoolean((Boolean) null).getValueBoolean() == null
+        def column = new ColumnConfig().setValueBoolean((Boolean) null)
+        column.getValueBoolean() == null
         new ColumnConfig().setValueBoolean(true).getValueBoolean() == true
         assert !new ColumnConfig().setValueBoolean(false).getValueBoolean()
     }
@@ -184,7 +177,8 @@ public class ColumnConfigTest extends Specification {
         expect:
         new ColumnConfig().setValueBoolean("null").getValueBoolean() == null
         new ColumnConfig().setValueBoolean("NULL").getValueBoolean() == null
-        new ColumnConfig().setValueBoolean((String) null).getValueBoolean() == null
+        def column = new ColumnConfig().setValueBoolean((String) null)
+        column.getValueBoolean() == null
         new ColumnConfig().setValueBoolean("").getValueBoolean() == null
         new ColumnConfig().setValueBoolean(" ").getValueBoolean() == null
 
@@ -215,10 +209,12 @@ public class ColumnConfigTest extends Specification {
 
     def setValueDate() {
         expect:
-        new ColumnConfig().setValueDate((String) null).getValueDate() == null
+        def column = new ColumnConfig().setValueDate((String) null)
+        column.getValueDate() == null
         new ColumnConfig().setValueDate("null").getValueDate() == null
         new ColumnConfig().setValueDate("NULL").getValueDate() == null
-        new ColumnConfig().setValueDate((Date) null).getValueDate() == null
+        def column2 = new ColumnConfig().setValueDate((Date) null)
+        column2.getValueDate() == null
 
         Date today = new Date();
         new ColumnConfig().setValueDate(today).getValueDate() == today
@@ -259,10 +255,12 @@ public class ColumnConfigTest extends Specification {
 
     def setDefaultValueNumeric_null() throws ParseException {
         expect:
-        new ColumnConfig().setDefaultValueNumeric((String) null).getDefaultValueNumeric() == null
+        def column = new ColumnConfig().setDefaultValueNumeric((String) null);
+        column.getDefaultValueNumeric() == null
         new ColumnConfig().setDefaultValueNumeric("null").getDefaultValueNumeric() == null
         new ColumnConfig().setDefaultValueNumeric("NULL").getDefaultValueNumeric() == null
-        new ColumnConfig().setDefaultValueNumeric((Number) null).getDefaultValueNumeric() == null
+        def column2 = new ColumnConfig().setDefaultValueNumeric((Number) null)
+        column2.getDefaultValueNumeric() == null
     }
 
     def setDefaultValueNumeric_generatedByDefault() throws ParseException {
@@ -281,10 +279,12 @@ public class ColumnConfigTest extends Specification {
 
     def setDefaultValueDate() {
         expect:
-        new ColumnConfig().setDefaultValueDate((String) null).getDefaultValueDate() == null
+        def column = new ColumnConfig().setDefaultValueDate((String) null)
+        column.getDefaultValueDate() == null
         new ColumnConfig().setDefaultValueDate("null").getDefaultValueDate() == null
         new ColumnConfig().setDefaultValueDate("NULL").getDefaultValueDate() == null
-        new ColumnConfig().setDefaultValueDate((Date) null).getDefaultValueDate() == null
+        def column2 = new ColumnConfig().setDefaultValueDate((Date) null)
+        column2.getDefaultValueDate() == null
         new ColumnConfig().setDefaultValueDate("").getDefaultValueDate() == null
 
         Date today = new Date();
@@ -307,7 +307,8 @@ public class ColumnConfigTest extends Specification {
 
     def setDefaultValueBoolean() {
         expect:
-        new ColumnConfig().setDefaultValueBoolean((Boolean) null).getDefaultValueBoolean() == null
+        def column = new ColumnConfig().setDefaultValueBoolean((Boolean) null)
+        column.getDefaultValueBoolean() == null
         new ColumnConfig().setDefaultValueBoolean(true).getDefaultValueBoolean() == true
         assert !new ColumnConfig().setDefaultValueBoolean(false).getDefaultValueBoolean()
     }
@@ -316,7 +317,8 @@ public class ColumnConfigTest extends Specification {
         expect:
         new ColumnConfig().setDefaultValueBoolean("null").getDefaultValueBoolean() == null
         new ColumnConfig().setDefaultValueBoolean("NULL").getDefaultValueBoolean() == null
-        new ColumnConfig().setDefaultValueBoolean((String) null).getDefaultValueBoolean() == null
+        def column = new ColumnConfig().setDefaultValueBoolean((String) null);
+        column.getDefaultValueBoolean() == null
         new ColumnConfig().setDefaultValueBoolean("").getDefaultValueBoolean() == null
         new ColumnConfig().setDefaultValueBoolean(" ").getDefaultValueBoolean() == null
 
@@ -420,7 +422,7 @@ public class ColumnConfigTest extends Specification {
         def testValue = "value for ${field}"
         if (field in ["defaultValueDate", "valueDate"]) {
             testValue = "2012-03-13 18:52:22.129"
-        } else if (field in ["defaultValueBoolean", "valueBoolean", "autoIncrement"]) {
+        } else if (field in ["defaultValueBoolean", "valueBoolean", "autoIncrement", "computed"]) {
             testValue = "true"
         } else if (field in ["startWith", "incrementBy"]) {
             testValue = "838"

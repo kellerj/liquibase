@@ -2,12 +2,16 @@ package liquibase.change.core;
 
 import liquibase.change.*;
 import liquibase.database.Database;
+import liquibase.parser.core.ParsedNode;
+import liquibase.parser.core.ParsedNodeException;
 import liquibase.snapshot.SnapshotGeneratorFactory;
 import liquibase.statement.SqlStatement;
 import liquibase.statement.core.CreateIndexStatement;
+import liquibase.structure.core.Column;
 import liquibase.structure.core.Index;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -92,11 +96,6 @@ public class CreateIndexChange extends AbstractChange implements ChangeWithColum
 
     @Override
     public SqlStatement[] generateStatements(Database database) {
-        List<String> columns = new ArrayList<String>();
-        for (ColumnConfig column : getColumns()) {
-            columns.add(column.getName());
-        }
-
 	    return new SqlStatement[]{
                 new CreateIndexStatement(
 					    getIndexName(),
@@ -105,7 +104,7 @@ public class CreateIndexChange extends AbstractChange implements ChangeWithColum
 					    getTableName(),
 					    this.isUnique(),
 					    getAssociatedWith(),
-					    columns.toArray(new String[getColumns().size()]))
+					    getColumns().toArray(new AddColumnConfig[getColumns().size()]))
 					    .setTablespace(getTablespace())
                         .setClustered(getClustered())
 	    };
@@ -130,7 +129,7 @@ public class CreateIndexChange extends AbstractChange implements ChangeWithColum
             Index example = new Index(getIndexName(), getCatalogName(), getSchemaName(), getTableName());
             if (getColumns() != null) {
                 for (ColumnConfig column : getColumns() ) {
-                    example.addColumn(column.getName());
+                    example.addColumn(new Column(column));
                 }
             }
 
@@ -204,5 +203,25 @@ public class CreateIndexChange extends AbstractChange implements ChangeWithColum
     @Override
     public String getSerializedObjectNamespace() {
         return STANDARD_CHANGELOG_NAMESPACE;
+    }
+
+    @Override
+    public Object getSerializableFieldValue(String field) {
+        Object value = super.getSerializableFieldValue(field);
+        if (value != null && field.equals("columns")) {
+            for (ColumnConfig config : (Collection<ColumnConfig>) value) {
+                config.setType(null);
+                config.setAutoIncrement(null);
+                config.setConstraints(null);
+                config.setDefaultValue(null);
+                config.setValue(null);
+                config.setStartWith(null);
+                config.setIncrementBy(null);
+                config.setEncoding(null);
+                config.setRemarks(null);
+            }
+
+        }
+        return value;
     }
 }

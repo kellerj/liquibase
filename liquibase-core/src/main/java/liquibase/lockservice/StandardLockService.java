@@ -79,11 +79,10 @@ public class StandardLockService implements LockService {
 
     @Override
     public void init() throws DatabaseException {
-
         boolean createdTable = false;
         Executor executor = ExecutorService.getInstance().getExecutor(database);
-        if (!hasDatabaseChangeLogLockTable && !hasDatabaseChangeLogLockTable()) {
 
+        if (!hasDatabaseChangeLogLockTable()) {
             executor.comment("Create Database Lock Table");
             executor.execute(new CreateDatabaseChangeLogLockTableStatement());
             database.commit();
@@ -112,20 +111,21 @@ public class StandardLockService implements LockService {
 
 
     public boolean isDatabaseChangeLogLockTableInitialized(final boolean tableJustCreated) throws DatabaseException {
-        boolean initialized;
-        Executor executor = ExecutorService.getInstance().getExecutor(database);
-        try {
-            initialized = executor.queryForInt(new RawSqlStatement("select count(*) from " + database.escapeTableName(database.getLiquibaseCatalogName(), database.getLiquibaseSchemaName(), database.getDatabaseChangeLogLockTableName()))) > 0;
-        } catch (LiquibaseException e) {
-            if (executor.updatesDatabase()) {
-                throw new UnexpectedLiquibaseException(e);
-            } else {
-                //probably didn't actually create the table yet.
+        if (!isDatabaseChangeLogLockTableInitialized) {
+            Executor executor = ExecutorService.getInstance().getExecutor(database);
 
-                initialized = !tableJustCreated;
+            try {
+                isDatabaseChangeLogLockTableInitialized = executor.queryForInt(new RawSqlStatement("select count(*) from " + database.escapeTableName(database.getLiquibaseCatalogName(), database.getLiquibaseSchemaName(), database.getDatabaseChangeLogLockTableName()))) > 0;
+            } catch (LiquibaseException e) {
+                if (executor.updatesDatabase()) {
+                    throw new UnexpectedLiquibaseException(e);
+                } else {
+                    //probably didn't actually create the table yet.
+                    isDatabaseChangeLogLockTableInitialized = !tableJustCreated;
+                }
             }
         }
-        return initialized;
+        return isDatabaseChangeLogLockTableInitialized;
     }
 
     @Override
@@ -134,13 +134,14 @@ public class StandardLockService implements LockService {
     }
 
     public boolean hasDatabaseChangeLogLockTable() throws DatabaseException {
-        boolean hasTable = false;
-        try {
-            hasTable = SnapshotGeneratorFactory.getInstance().hasDatabaseChangeLogLockTable(database);
-        } catch (LiquibaseException e) {
-            throw new UnexpectedLiquibaseException(e);
+        if (!hasDatabaseChangeLogLockTable) {
+            try {
+                hasDatabaseChangeLogLockTable = SnapshotGeneratorFactory.getInstance().hasDatabaseChangeLogLockTable(database);
+            } catch (LiquibaseException e) {
+                throw new UnexpectedLiquibaseException(e);
+            }
         }
-        return hasTable;
+        return hasDatabaseChangeLogLockTable;
     }
 
 
@@ -294,6 +295,8 @@ public class StandardLockService implements LockService {
     @Override
     public void reset() {
         hasChangeLogLock = false;
+        hasDatabaseChangeLogLockTable = false;
+        isDatabaseChangeLogLockTableInitialized = false;
     }
 
     @Override
@@ -301,10 +304,11 @@ public class StandardLockService implements LockService {
         try {
             if (SnapshotGeneratorFactory.getInstance().has(new Table().setName(database.getDatabaseChangeLogLockTableName()).setSchema(database.getLiquibaseCatalogName(), database.getLiquibaseSchemaName()), database)) {
                 ExecutorService.getInstance().getExecutor(database).execute(new DropTableStatement(database.getLiquibaseCatalogName(), database.getLiquibaseSchemaName(), database.getDatabaseChangeLogLockTableName(), false));
+                hasDatabaseChangeLogLockTable = false;
             }
+            reset();
         } catch (InvalidExampleException e) {
             throw new UnexpectedLiquibaseException(e);
         }
-
     }
 }

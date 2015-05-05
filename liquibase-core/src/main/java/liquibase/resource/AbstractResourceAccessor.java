@@ -7,13 +7,16 @@ import liquibase.util.SystemUtils;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.Enumeration;
-import java.util.HashSet;
 import java.util.Set;
+import java.util.List;
+
 
 public abstract class AbstractResourceAccessor implements ResourceAccessor {
 
-    private Set<String> rootStrings = new HashSet<String>();
+    //We don't use an HashSet otherwise iteration order is not deterministic
+	private List<String> rootStrings = new ArrayList<String>();
 
     protected AbstractResourceAccessor() {
         init();
@@ -40,10 +43,16 @@ public abstract class AbstractResourceAccessor implements ResourceAccessor {
     }
 
     protected void addRootPath(URL path) {
-        rootStrings.add(path.toExternalForm());
+    	String externalForm = path.toExternalForm();
+    	if (!externalForm.endsWith("/")) {
+    		externalForm += "/";
+    	}
+    	if (!rootStrings.contains(externalForm)) {
+    		rootStrings.add(externalForm);
+    	}
     }
 
-    protected Set<String> getRootPaths() {
+    protected List<String> getRootPaths() {
         return rootStrings;
     }
 
@@ -116,19 +125,29 @@ public abstract class AbstractResourceAccessor implements ResourceAccessor {
         if (baseUrl == null) {
             throw new UnexpectedLiquibaseException("Cannot find base path '"+relativeTo+"'");
         }
+        String base;
         if (baseUrl.toExternalForm().startsWith("file:")) {
             File baseFile = new File(baseUrl.getPath());
             if (!baseFile.exists()) {
-                throw new UnexpectedLiquibaseException("Base file '"+baseFile.getAbsolutePath()+"' does not exist");
+                throw new UnexpectedLiquibaseException("Base file '" + baseFile.getAbsolutePath() + "' does not exist");
             }
             if (baseFile.isFile()) {
                 baseFile = baseFile.getParentFile();
             }
-
-            return convertToPath(baseFile.toURI().getPath()+"/"+path);
+            base = baseFile.toURI().getPath();
+        } else if (baseUrl.toExternalForm().startsWith("jar:file:")) {
+                return convertToPath(new File(relativeTo).getParent() + '/' + path);
         } else {
-            return convertToPath(relativeTo+"/"+path);
+            base = relativeTo;
         }
+        String separator = "";
+        if (!base.endsWith("/") && !path.startsWith("/")) {
+        	separator = "/";
+        }
+        if (base.endsWith("/") && path.startsWith("/")) {
+        	base = base.substring(0, base.length() - 1);
+        }            
+        return convertToPath(base + separator + path);
     }
 
 

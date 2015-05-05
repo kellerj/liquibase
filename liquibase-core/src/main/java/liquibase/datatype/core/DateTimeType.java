@@ -4,7 +4,6 @@ import liquibase.database.core.*;
 import liquibase.datatype.DataTypeInfo;
 import liquibase.datatype.DatabaseDataType;
 import liquibase.datatype.LiquibaseDataType;
-import liquibase.exception.DatabaseException;
 import liquibase.statement.DatabaseFunction;
 import liquibase.database.Database;
 
@@ -30,14 +29,42 @@ public class DateTimeType extends LiquibaseDataType {
         if (database instanceof MSSQLDatabase) {
             if ((getParameters().length > 0 && "16".equals(getParameters()[0])) || "SMALLDATETIME".equalsIgnoreCase(getRawDefinition())) {
                    return new DatabaseDataType("SMALLDATETIME");
+            } else if (getRawDefinition().toLowerCase().startsWith("datetime2")) {
+                return new DatabaseDataType(getRawDefinition());
             }
         }
         if (database instanceof InformixDatabase) {
-            int fraction = 5;
-            if (getParameters().length > 0) {
-                fraction = Integer.valueOf(getParameters()[0].toString());
+
+          // From database to changelog
+          if (getAdditionalInformation() == null || getAdditionalInformation().length() == 0) {
+            if (getParameters() != null && getParameters().length > 0) {
+
+              String parameter = String.valueOf(getParameters()[0]);
+              
+              if("4365".equals(parameter)) {
+                return new DatabaseDataType("DATETIME YEAR TO FRACTION(3)");
+              }
+
+              if("3594".equals(parameter)) {
+                return new DatabaseDataType("DATETIME YEAR TO SECOND");
+              }
+
+              if("3080".equals(parameter)) {
+                return new DatabaseDataType("DATETIME YEAR TO MINUTE");
+              }
+
+              if("2052".equals(parameter)) {
+                return new DatabaseDataType("DATETIME YEAR TO DAY");
+              }
             }
-            return new DatabaseDataType("DATETIME YEAR TO FRACTION", fraction);
+          }
+
+          // From changelog to the database
+          if (getAdditionalInformation() != null && getAdditionalInformation().length() > 0) {
+            return new DatabaseDataType(getRawDefinition());
+          }
+
+          return new DatabaseDataType("DATETIME YEAR TO FRACTION", 5);
         }
         if (database instanceof PostgresDatabase) {
             String rawDefinition = getRawDefinition().toLowerCase();
@@ -52,8 +79,19 @@ public class DateTimeType extends LiquibaseDataType {
         }
 
         if (database instanceof MySQLDatabase) {
-            return new DatabaseDataType(getName());
-        }
+            boolean supportsParameters = true;
+            try {
+                supportsParameters = database.getDatabaseMajorVersion() >= 5
+                        && database.getDatabaseMinorVersion() >= 6
+                        && ((MySQLDatabase) database).getDatabasePatchVersion() >= 4;
+            } catch (Exception ignore) {
+                //assume supports parameters
+            }
+            if (supportsParameters && getParameters().length > 0 && Integer.valueOf(getParameters()[0].toString()) <= 6) {
+                return new DatabaseDataType(getName(), getParameters());
+            } else {
+                return new DatabaseDataType(getName());
+            }        }
 
         return new DatabaseDataType(getName());
     }

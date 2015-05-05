@@ -39,7 +39,7 @@ public class PrimaryKeySnapshotGenerator extends JdbcSnapshotGenerator {
             rs = metaData.getPrimaryKeys(((AbstractJdbcDatabase) database).getJdbcCatalogName(schema), ((AbstractJdbcDatabase) database).getJdbcSchemaName(schema), searchTableName);
             PrimaryKey returnKey = null;
             for (CachedRow row : rs) {
-                if (example.getName() != null && !example.getName().equals(row.getString("PK_NAME"))) {
+                if (example.getName() != null && !example.getName().equalsIgnoreCase(row.getString("PK_NAME"))) {
                     continue;
                 }
                 String columnName = cleanNameFromDatabase(row.getString("COLUMN_NAME"), database);
@@ -56,12 +56,12 @@ public class PrimaryKeySnapshotGenerator extends JdbcSnapshotGenerator {
                     position = (short) (position + 1);
                 }
 
-                returnKey.addColumnName(position - 1, columnName);
+                returnKey.addColumn(position - 1, new Column(columnName).setRelation(((PrimaryKey) example).getTable()));
             }
 
             if (returnKey != null) {
                 Index exampleIndex = new Index().setTable(returnKey.getTable());
-                exampleIndex.getColumns().addAll(Arrays.asList(returnKey.getColumnNames().split("\\s*,\\s*")));
+                exampleIndex.setColumns(returnKey.getColumns());
                 if (database instanceof MSSQLDatabase) { //index name matches PK name for better accuracy
                     exampleIndex.setName(returnKey.getName());
                 }

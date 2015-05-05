@@ -185,7 +185,7 @@
 						<xsd:complexType>
 							<xsd:attribute name="path" type="xsd:string" use="required" />
 							<xsd:attribute name="relativeToChangelogFile" type="booleanExp" />
-                            <xsd:attribute name="filter" type="xsd:string" />
+                            <xsd:attribute name="resourceFilter" type="xsd:string" />
 							<xsd:anyAttribute namespace="##other" />
 						</xsd:complexType>
 					</xsd:element>
@@ -277,7 +277,8 @@
     </xsd:attributeGroup>
 
 	<xsd:attributeGroup name="column">
-		<xsd:attribute name="name" type="xsd:string" use="required" />
+		<xsd:attribute name="name" type="xsd:string"/>
+        <xsd:attribute name="computed" type="booleanExp"/>
 		<xsd:attribute name="type" type="xsd:string" />
 		<xsd:attribute name="value" type="xsd:string" />
 		<xsd:attribute name="valueNumeric" type="xsd:string" />
@@ -367,7 +368,7 @@
 
 	<xsd:attributeGroup name="dropColumnAttributes">
 		<xsd:attributeGroup ref="tableNameAttribute" />
-		<xsd:attribute name="columnName" type="xsd:string" use="required" />
+		<xsd:attribute name="columnName" type="xsd:string" />
 	</xsd:attributeGroup>
 
 	<xsd:attributeGroup name="sequenceAttributes">
@@ -382,6 +383,15 @@
 		<xsd:attribute name="ordered" type="booleanExp" />
         <xsd:attribute name="cacheSize" type="xsd:nonNegativeInteger" />
     </xsd:attributeGroup>
+
+	<xsd:attributeGroup name="renameSequenceAttributes">
+		<xsd:attribute name="catalogName" type="xsd:string" />
+		<xsd:attribute name="schemaName" type="xsd:string" />
+		<xsd:attribute name="oldSequenceName" type="xsd:string"
+					   use="required" />
+		<xsd:attribute name="newSequenceName" type="xsd:string"
+					   use="required" />
+	</xsd:attributeGroup>
 
 	<xsd:attributeGroup name="indexName">
 		<xsd:attribute name="indexName" type="xsd:string" use="required" />
@@ -404,7 +414,8 @@
 				use="required" />
 			<xsd:attribute name="constraintName" type="xsd:string" />
 			<xsd:attribute name="tablespace" type="xsd:string" />
-		</xsd:complexType>
+            <xsd:attribute name="clustered" type="booleanExp" />
+        </xsd:complexType>
 	</xsd:element>
 
 	<xsd:element name="dropPrimaryKey">
@@ -513,6 +524,7 @@
 			</xsd:sequence>
             <xsd:attributeGroup ref="tableNameAttribute" />
 			<xsd:attribute name="file" type="xsd:string" />
+			<xsd:attribute name="relativeToChangelogFile" type="booleanExp" />
 			<xsd:attribute name="encoding" type="xsd:string" default="UTF-8"/>
 			<xsd:attribute name="separator" type="xsd:string" default=","/>
 			<xsd:attribute name="quotchar" type="xsd:string" default="&quot;"/>
@@ -538,8 +550,10 @@
 			</xsd:sequence>
             <xsd:attributeGroup ref="tableNameAttribute" />
 			<xsd:attribute name="file" type="xsd:string" />
+			<xsd:attribute name="relativeToChangelogFile" type="booleanExp" />
 			<xsd:attribute name="encoding" type="xsd:string" default="UTF-8"/>
 			<xsd:attribute name="primaryKey" type="xsd:string" use="required" />
+			<xsd:attribute name="onlyUpdate" type="xsd:boolean" default="false" />
 			<xsd:attribute name="separator" type="xsd:string" default=","/>
 			<xsd:attribute name="quotchar" type="xsd:string" default="&quot;"/>
 		</xsd:complexType>
@@ -841,6 +855,7 @@
 			<xsd:attributeGroup ref="tableNameAttribute" />
             <xsd:attribute name="tablespace" type="xsd:string" />            
 			<xsd:attribute name="remarks" type="xsd:string" />
+            <xsd:anyAttribute namespace="##other" processContents="lax"/>
 		</xsd:complexType>
 	</xsd:element>
 
@@ -959,7 +974,8 @@
             <xsd:attribute name="encoding" type="xsd:string" />
             <xsd:attribute name="relativeToChangelogFile" type="booleanExp" />
             <xsd:attribute name="dbms" type="xsd:string" />
-		</xsd:complexType>
+            <xsd:attribute name="replaceIfExists" type="xsd:boolean" />
+        </xsd:complexType>
 	</xsd:element>
 
 	<xsd:element name="executeCommand">
@@ -997,6 +1013,8 @@
 	<xsd:element name="stop">
 		<xsd:complexType mixed="true" />
 	</xsd:element>
+
+    <xsd:element name="empty"/>
 
     <xsd:element name="output">
         <xsd:complexType mixed="true" >
@@ -1049,7 +1067,10 @@
 	</xsd:element>
 
 	<xsd:element name="dropColumn">
-		<xsd:complexType>
+        <xsd:complexType>
+            <xsd:sequence>
+                <xsd:element name="column" minOccurs="0" maxOccurs="unbounded" type="columnType" />
+            </xsd:sequence>
 			<xsd:attributeGroup ref="dropColumnAttributes" />
 		</xsd:complexType>
 	</xsd:element>
@@ -1092,6 +1113,12 @@
 	<xsd:element name="dropSequence">
 		<xsd:complexType>
 			<xsd:attributeGroup ref="sequenceAttributes" />
+		</xsd:complexType>
+	</xsd:element>
+
+	<xsd:element name="renameSequence">
+		<xsd:complexType>
+			<xsd:attributeGroup ref="renameSequenceAttributes" />
 		</xsd:complexType>
 	</xsd:element>
 
@@ -1152,6 +1179,7 @@
 			<xsd:element ref="createSequence" maxOccurs="unbounded" />
 			<xsd:element ref="alterSequence" maxOccurs="unbounded" />
 			<xsd:element ref="dropSequence" maxOccurs="unbounded" />
+			<xsd:element ref="renameSequence" maxOccurs="unbounded" />
 			<xsd:element ref="createIndex" maxOccurs="unbounded" />
 			<xsd:element ref="dropIndex" maxOccurs="unbounded" />
 			<xsd:element ref="addNotNullConstraint" maxOccurs="unbounded" />
@@ -1176,6 +1204,7 @@
 			<xsd:element ref="executeCommand" maxOccurs="unbounded" />
 			<xsd:element ref="stop" maxOccurs="unbounded" />
             <xsd:element ref="output" maxOccurs="unbounded" />
+            <xsd:element ref="empty" maxOccurs="unbounded" />
 			<xsd:element ref="rollback" maxOccurs="1" />
 			<xsd:any namespace="##other" processContents="lax" minOccurs="0"
 				maxOccurs="unbounded" />

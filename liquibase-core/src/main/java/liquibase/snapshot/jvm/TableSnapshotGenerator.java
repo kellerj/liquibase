@@ -29,7 +29,7 @@ public class TableSnapshotGenerator extends JdbcSnapshotGenerator {
         List<CachedRow> rs = null;
         try {
             JdbcDatabaseSnapshot.CachingDatabaseMetaData metaData = ((JdbcDatabaseSnapshot) snapshot).getMetaData();
-            rs = metaData.getTables(((AbstractJdbcDatabase) database).getJdbcCatalogName(schema), ((AbstractJdbcDatabase) database).getJdbcSchemaName(schema), database.correctObjectName(objectName, Table.class), new String[]{"TABLE"});
+            rs = metaData.getTables(((AbstractJdbcDatabase) database).getJdbcCatalogName(schema), ((AbstractJdbcDatabase) database).getJdbcSchemaName(schema), database.correctObjectName(objectName, Table.class));
 
             Table table;
             if (rs.size() > 0) {
@@ -57,7 +57,7 @@ public class TableSnapshotGenerator extends JdbcSnapshotGenerator {
 
             List<CachedRow> tableMetaDataRs = null;
             try {
-                tableMetaDataRs = ((JdbcDatabaseSnapshot) snapshot).getMetaData().getTables(((AbstractJdbcDatabase) database).getJdbcCatalogName(schema), ((AbstractJdbcDatabase) database).getJdbcSchemaName(schema), null, new String[]{"TABLE"});
+                tableMetaDataRs = ((JdbcDatabaseSnapshot) snapshot).getMetaData().getTables(((AbstractJdbcDatabase) database).getJdbcCatalogName(schema), ((AbstractJdbcDatabase) database).getJdbcSchemaName(schema), null);
                 for (CachedRow row : tableMetaDataRs) {
                     String tableName = row.getString("TABLE_NAME");
                     Table tableExample = (Table) new Table().setName(cleanNameFromDatabase(tableName, database)).setSchema(schema);
@@ -86,6 +86,17 @@ public class TableSnapshotGenerator extends JdbcSnapshotGenerator {
 
         CatalogAndSchema schemaFromJdbcInfo = ((AbstractJdbcDatabase) database).getSchemaFromJdbcInfo(rawCatalogName, rawSchemaName);
         table.setSchema(new Schema(schemaFromJdbcInfo.getCatalogName(), schemaFromJdbcInfo.getSchemaName()));
+
+        if ("Y".equals(tableMetadataResultSet.getString("TEMPORARY"))) {
+            table.setAttribute("temporary", "GLOBAL");
+
+            String duration = tableMetadataResultSet.getString("DURATION");
+            if (duration != null && duration.equals("SYS$TRANSACTION")) {
+                table.setAttribute("duration", "ON COMMIT DELETE ROWS");
+            } else if (duration != null && duration.equals("SYS$SESSION")) {
+                table.setAttribute("duration", "ON COMMIT PRESERVE ROWS");
+            }
+        }
 
         return table;
     }

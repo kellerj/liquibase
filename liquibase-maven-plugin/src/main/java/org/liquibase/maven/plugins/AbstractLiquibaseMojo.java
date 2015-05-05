@@ -35,7 +35,7 @@ import java.util.*;
  * @author Florent Biville
  *
  * Test dependency is used because when you run a goal outside the build phases you want to have the same dependencies
- * that it would had if it was ran inside test phase 
+ * that it would had if it was ran inside test phase
  * @requiresDependencyResolution test
  */
 public abstract class AbstractLiquibaseMojo extends AbstractMojo {
@@ -131,6 +131,13 @@ public abstract class AbstractLiquibaseMojo extends AbstractMojo {
      * @parameter expression="${liquibase.databaseClass}"
      */
     protected String databaseClass;
+    
+    /**
+     * The class to use as the property provider (must be a java.util.Properties implementation).
+     * 
+     * @parameter expression="${liquibase.propertyProviderClass}"
+     */
+    protected String propertyProviderClass;
 
     /**
      * Controls the prompting of users as to whether or not they really want to run the
@@ -199,11 +206,11 @@ public abstract class AbstractLiquibaseMojo extends AbstractMojo {
      */
     protected boolean clearCheckSums;
 
-    /**                                                                                                                                                                          
-     * List of system properties to pass to the database.                                                                                                                        
-     *                                                                                                                                                                           
-     * @parameter                                                                                                                                                                
-     */                                                                                                                                                                          
+    /**
+     * List of system properties to pass to the database.
+     *
+     * @parameter
+     */
     protected Properties systemProperties;
 
     /**
@@ -228,12 +235,12 @@ public abstract class AbstractLiquibaseMojo extends AbstractMojo {
     private Properties expressionVars;
 
     /**
-     * Set this to 'true' to skip running liquibase. Its use is NOT RECOMMENDED, but quite
+     * Set this to 'false' to skip running liquibase. Its use is NOT RECOMMENDED, but quite
      * convenient on occasion.
      *
      * @parameter expression="${liquibase.should.run}"
      */
-    protected boolean skip;
+    protected boolean liquibaseShouldRun;
 
     /**
      * Array to put a expression variable to maven plugin.
@@ -283,6 +290,8 @@ public abstract class AbstractLiquibaseMojo extends AbstractMojo {
             }
         }
 
+        processSystemProperties();
+
         LiquibaseConfiguration liquibaseConfiguration = LiquibaseConfiguration.getInstance();
 
         if (!liquibaseConfiguration.getConfiguration(GlobalConfiguration.class).getShouldRun()) {
@@ -290,23 +299,15 @@ public abstract class AbstractLiquibaseMojo extends AbstractMojo {
             return;
         }
 
-        if (skip) {
+        if (!liquibaseShouldRun) {
             getLog().warn("Liquibase skipped due to maven configuration");
             return;
         }
 
-        processSystemProperties();
-
         ClassLoader artifactClassLoader = getMavenArtifactClassLoader();
         configureFieldsAndValues(getFileOpener(artifactClassLoader));
 
-        try {
-            LogFactory.setLoggingLevel(logging);
-        }
-        catch (IllegalArgumentException e) {
-            throw new MojoExecutionException("Failed to set logging level: " + e.getMessage(),
-                    e);
-        }
+        LogFactory.getInstance().setDefaultLoggingLevel(logging);
 
         // Displays the settings for the Mojo depending of verbosity mode.
         displayMojoSettings();
@@ -328,6 +329,7 @@ public abstract class AbstractLiquibaseMojo extends AbstractMojo {
                     outputDefaultSchema,
                     databaseClass,
                     null,
+                    propertyProviderClass,
                     changelogCatalogName,
                     changelogSchemaName);
             liquibase = createLiquibase(getFileOpener(artifactClassLoader), database);
@@ -607,7 +609,7 @@ public abstract class AbstractLiquibaseMojo extends AbstractMojo {
             field.set(this, value);
         }
     }
-    
+
     @SuppressWarnings("unchecked")
     private void processSystemProperties() {
         if (systemProperties == null)

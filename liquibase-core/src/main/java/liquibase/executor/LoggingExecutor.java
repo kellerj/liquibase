@@ -58,13 +58,13 @@ public class LoggingExecutor extends AbstractExecutor implements Executor {
 
     @Override
     public int update(SqlStatement sql) throws DatabaseException {
+        outputStatement(sql);
+
         if (sql instanceof LockDatabaseChangeLogStatement) {
             return 1;
         } else if (sql instanceof UnlockDatabaseChangeLogStatement) {
             return 1;
         }
-
-        outputStatement(sql);
 
         return 0;
     }
@@ -116,9 +116,17 @@ public class LoggingExecutor extends AbstractExecutor implements Executor {
     //                output.write("/");
                 } else {
                     String endDelimiter = ";";
+                    String potentialDelimiter = null;
                     if (sql instanceof RawSqlStatement) {
-                        endDelimiter = ((RawSqlStatement) sql).getEndDelimiter();
+                        potentialDelimiter = ((RawSqlStatement) sql).getEndDelimiter();
+                    } else if (sql instanceof CreateProcedureStatement) {
+                        potentialDelimiter = ((CreateProcedureStatement) sql).getEndDelimiter();
                     }
+                    if (potentialDelimiter != null && potentialDelimiter.matches("[;/\\w\r\n]+")) {
+                        endDelimiter = potentialDelimiter;
+                    }
+
+
                     if (!statement.endsWith(endDelimiter)) {
                         output.write(endDelimiter);
                     }

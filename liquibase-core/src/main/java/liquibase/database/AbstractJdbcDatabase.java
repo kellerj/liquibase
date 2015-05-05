@@ -737,9 +737,13 @@ public abstract class AbstractJdbcDatabase implements Database {
             List<ChangeSet> changeSets = new DiffToChangeLog(diffResult, new DiffOutputControl(true, true, false).addIncludedSchema(schemaToDrop)).generateChangeSets();
 	        LogFactory.getLogger().debug(String.format("ChangeSet to Remove Database Objects generated in %d ms.", System.currentTimeMillis() - changeSetStarted));
 
+            boolean previousAutoCommit = this.getAutoCommitMode();
+            this.commit(); //clear out currently executed statements
+            this.setAutoCommit(false); //some DDL doesn't work in autocommit mode
             final boolean reEnableFK = supportsForeignKeyDisable() && disableForeignKeyChecks();
             try {
                 for (ChangeSet changeSet : changeSets) {
+                    changeSet.setFailOnError(false);
                     for (Change change : changeSet.getChanges()) {
                         if (change instanceof DropTableChange) {
                             ((DropTableChange) change).setCascadeConstraints(true);
@@ -750,6 +754,7 @@ public abstract class AbstractJdbcDatabase implements Database {
                         }
 
                     }
+                    this.commit();
                 }
             } finally {
                 if (reEnableFK) {
@@ -759,6 +764,8 @@ public abstract class AbstractJdbcDatabase implements Database {
 
             ChangeLogHistoryServiceFactory.getInstance().getChangeLogService(this).destroy();
             LockServiceFactory.getInstance().getLockService(this).destroy();
+
+            this.setAutoCommit(previousAutoCommit);
 
         } finally {
             this.setObjectQuotingStrategy(currentStrategy);
@@ -961,14 +968,11 @@ public abstract class AbstractJdbcDatabase implements Database {
     }
 
     protected boolean mustQuoteObjectName(String objectName, Class<? extends DatabaseObject> objectType) {
-        if (objectName.contains("(")) {
-            return false;
-        }
-        return objectName.contains("-") || startsWithNumeric(objectName) || isReservedWord(objectName) || objectName.contains(" ");
+        return objectName.contains("-") || startsWithNumeric(objectName) || isReservedWord(objectName) || objectName.matches(".*\\W.*");
     }
 
     public String quoteObject(final String objectName, final Class<? extends DatabaseObject> objectType) {
-        return quotingStartCharacter + objectName + quotingEndCharacter;
+        return quotingStartCharacter + escapeStringForDatabase(objectName) + quotingEndCharacter;
     }
 
     @Override
@@ -988,6 +992,23 @@ public abstract class AbstractJdbcDatabase implements Database {
 
     @Override
     public String escapeColumnName(final String catalogName, final String schemaName, final String tableName, final String columnName) {
+        return escapeObjectName(columnName, Column.class);
+    }
+
+    /**
+     * Similar to {@link #escapeColumnName(String, String, String, String)} but allows control over whether function-like names should be left unquoted.
+     *
+     * @deprecated Know if you should quote the name or not, and use {@link #escapeColumnName(String, String, String, String)} which will quote things that look like functions, or leave it along as you see fit. Don't rely on this function guessing.
+     */
+    @Override
+    public String escapeColumnName(String catalogName, String schemaName, String tableName, String columnName, boolean quoteNamesThatMayBeFunctions) {
+        if (quotingStrategy == ObjectQuotingStrategy.QUOTE_ALL_OBJECTS) {
+            return quoteObject(columnName, Column.class);
+        }
+
+        if (!quoteNamesThatMayBeFunctions && columnName.contains("(")) {
+            return columnName;
+        }
         return escapeObjectName(columnName, Column.class);
     }
 
@@ -1190,10 +1211,10 @@ public abstract class AbstractJdbcDatabase implements Database {
     }
 
     /*
-     * Executes the statements passed as argument to a target {@link Database}
+     * Executes the statements passed
      *
      * @param statements an array containing the SQL statements to be issued
-     * @param database the target {@link Database}
+     * @param sqlVisitors a list of {@link SqlVisitor} objects to be applied to the executed statements
      * @throws DatabaseException if there were problems issuing the statements
      */
     @Override
@@ -1202,7 +1223,7 @@ public abstract class AbstractJdbcDatabase implements Database {
             if (statement.skipOnUnsupported() && !SqlGeneratorFactory.getInstance().supports(statement, this)) {
                 continue;
             }
-            LogFactory.getLogger().debug("Executing Statement: " + statement.getClass().getName());
+            LogFactory.getLogger().debug("Executing Statement: " + statement);
             ExecutorService.getInstance().getExecutor(this).execute(statement, sqlVisitors);
         }
     }
@@ -1219,17 +1240,14 @@ public abstract class AbstractJdbcDatabase implements Database {
     }
 
     @Override
-    public void executeRollbackStatements(final Change change, final List<SqlVisitor> sqlVisitors) throws LiquibaseException, RollbackImpossibleException {
-        SqlStatement[] statements = change.generateRollbackStatements(this);
-        List<SqlVisitor> rollbackVisitors = new ArrayList<SqlVisitor>();
-        if (sqlVisitors != null) {
-            for (SqlVisitor visitor : sqlVisitors) {
-                if (visitor.isApplyToRollback()) {
-                    rollbackVisitors.add(visitor);
-                }
-            }
-        }
-        execute(statements, rollbackVisitors);
+    public void executeRollbackStatements(final SqlStatement[] statements, final List<SqlVisitor> sqlVisitors) throws LiquibaseException, RollbackImpossibleException {
+        execute(statements, filterRollbackVisitors(sqlVisitors));
+    }
+    
+    @Override
+    public void executeRollbackStatements(final Change change, final List<SqlVisitor> sqlVisitors) throws LiquibaseException, RollbackImpossibleException {        
+        final SqlStatement[] statements = change.generateRollbackStatements(this);
+        executeRollbackStatements(statements, sqlVisitors);
     }
 
     @Override
@@ -1242,6 +1260,22 @@ public abstract class AbstractJdbcDatabase implements Database {
         }
     }
 
+    /**
+     * Takes a list of SqlVisitors and returns a new list with only the SqlVisitors set to apply to rollbacks
+     */
+    protected List<SqlVisitor> filterRollbackVisitors(final List<SqlVisitor> visitors) {
+        final List<SqlVisitor> rollbackVisitors = new ArrayList<SqlVisitor>();
+        if (visitors != null) {
+            for (SqlVisitor visitor : visitors) {
+               if (visitor.isApplyToRollback()) {
+                   rollbackVisitors.add(visitor);
+               }
+            }
+        }
+        
+        return rollbackVisitors;
+    }
+    
     @Override
     public List<DatabaseFunction> getDateFunctions() {
         return dateFunctions;
@@ -1346,13 +1380,22 @@ public abstract class AbstractJdbcDatabase implements Database {
                 throw new RuntimeException(String.format("next value function for a sequence is not configured for database %s",
                         getDefaultDatabaseProductName()));
             }
-            return String.format(sequenceNextValueFunction, escapeObjectName(databaseFunction.getValue(), Sequence.class));
+            String sequenceName = databaseFunction.getValue();
+            if (!sequenceNextValueFunction.contains("'")) {
+                sequenceName = escapeObjectName(sequenceName, Sequence.class);
+            }
+            return String.format(sequenceNextValueFunction, sequenceName);
         } else if (databaseFunction instanceof SequenceCurrentValueFunction) {
             if (sequenceCurrentValueFunction == null) {
                 throw new RuntimeException(String.format("current value function for a sequence is not configured for database %s",
                         getDefaultDatabaseProductName()));
             }
-            return String.format(sequenceCurrentValueFunction, escapeObjectName(databaseFunction.getValue(), Sequence.class));
+
+            String sequenceName = databaseFunction.getValue();
+            if (!sequenceCurrentValueFunction.contains("'")) {
+                sequenceName = escapeObjectName(sequenceName, Sequence.class);
+            }
+            return String.format(sequenceCurrentValueFunction, sequenceName);
         } else {
             return databaseFunction.getValue();
         }

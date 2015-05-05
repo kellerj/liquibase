@@ -1,4 +1,9 @@
-target
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
 *nb-configuration.xml
 /.idea/workspace.xml
 /out
@@ -9,3 +14,4 @@ derby.log
 /.idea
 *.iml
 .DS_Store
+/tmp

@@ -7,6 +7,7 @@ import liquibase.snapshot.SnapshotGeneratorFactory;
 import liquibase.statement.SqlStatement;
 import liquibase.statement.core.AddPrimaryKeyStatement;
 import liquibase.statement.core.ReorganizeTableStatement;
+import liquibase.structure.core.Column;
 import liquibase.structure.core.PrimaryKey;
 import liquibase.structure.core.Table;
 
@@ -22,6 +23,7 @@ public class AddPrimaryKeyChange extends AbstractChange {
     private String tablespace;
     private String columnNames;
     private String constraintName;
+    private Boolean clustered;
 
     @DatabaseChangeProperty(mustEqualExisting = "column.relation", description = "Name of the table to create the primary key on")
     public String getTableName() {
@@ -77,12 +79,21 @@ public class AddPrimaryKeyChange extends AbstractChange {
         this.tablespace = tablespace;
     }
 
+    public Boolean getClustered() {
+        return clustered;
+    }
+
+    public void setClustered(Boolean clustered) {
+        this.clustered = clustered;
+    }
+
     @Override
     public SqlStatement[] generateStatements(Database database) {
 
 
         AddPrimaryKeyStatement statement = new AddPrimaryKeyStatement(getCatalogName(), getSchemaName(), getTableName(), getColumnNames(), getConstraintName());
         statement.setTablespace(getTablespace());
+        statement.setClustered(getClustered());
 
         if (database instanceof DB2Database) {
             return new SqlStatement[]{
@@ -103,7 +114,7 @@ public class AddPrimaryKeyChange extends AbstractChange {
     public ChangeStatus checkStatus(Database database) {
         ChangeStatus result = new ChangeStatus();
         try {
-            PrimaryKey example = new PrimaryKey(getConstraintName(), getCatalogName(), getSchemaName(), getTableName(), getColumnNames().split("\\s+,\\s+"));
+            PrimaryKey example = new PrimaryKey(getConstraintName(), getCatalogName(), getSchemaName(), getTableName(), Column.arrayFromNames(getColumnNames()));
 
             PrimaryKey snapshot = SnapshotGeneratorFactory.getInstance().createSnapshot(example, database);
             result.assertComplete(snapshot != null, "Primary key does not exist");

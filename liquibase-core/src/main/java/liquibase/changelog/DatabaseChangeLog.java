@@ -18,9 +18,14 @@ import liquibase.parser.core.ParsedNodeException;
 import liquibase.precondition.Conditional;
 import liquibase.precondition.core.PreconditionContainer;
 import liquibase.resource.ResourceAccessor;
+import liquibase.util.StreamUtil;
+import liquibase.util.StringUtils;
 import liquibase.util.file.FilenameUtils;
+import org.xml.sax.SAXException;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.*;
 
 /**
@@ -36,6 +41,7 @@ public class DatabaseChangeLog implements Comparable<DatabaseChangeLog>, Conditi
     private ChangeLogParameters changeLogParameters;
 
     private RuntimeEnvironment runtimeEnvironment;
+    private boolean ignoreClasspathPrefix = false;
 
     public DatabaseChangeLog() {
     }
@@ -124,7 +130,7 @@ public class DatabaseChangeLog implements Comparable<DatabaseChangeLog>, Conditi
 
     public ChangeSet getChangeSet(String path, String author, String id) {
         for (ChangeSet changeSet : changeSets) {
-            if (changeSet.getFilePath().equalsIgnoreCase(path)
+            if (normalizePath(changeSet.getFilePath()).equalsIgnoreCase(normalizePath(path))
                     && changeSet.getAuthor().equalsIgnoreCase(author)
                     && changeSet.getId().equalsIgnoreCase(id)
                     && (changeSet.getDbmsSet() == null
@@ -197,18 +203,46 @@ public class DatabaseChangeLog implements Comparable<DatabaseChangeLog>, Conditi
 
     public void load(ParsedNode parsedNode, ResourceAccessor resourceAccessor) throws ParsedNodeException, SetupException {
         setLogicalFilePath(parsedNode.getChildValue(null, "logicalFilePath", String.class));
-
+        String objectQuotingStrategy = parsedNode.getChildValue(null, "objectQuotingStrategy", String.class);
+        if (objectQuotingStrategy != null) {
+            setObjectQuotingStrategy(ObjectQuotingStrategy.valueOf(objectQuotingStrategy));
+        }
         for (ParsedNode childNode : parsedNode.getChildren()) {
             handleChildNode(childNode, resourceAccessor);
         }
     }
 
+    protected void expandExpressions(ParsedNode parsedNode) {
+        if (changeLogParameters == null) {
+            return;
+        }
+        try {
+            Object value = parsedNode.getValue();
+            if (value != null && value instanceof String) {
+                parsedNode.setValue(changeLogParameters.expandExpressions(parsedNode.getValue(String.class)));
+            }
+
+            List<ParsedNode> children = parsedNode.getChildren();
+            if (children != null) {
+                for (ParsedNode child : children) {
+                    expandExpressions(child);
+                }
+            }
+        } catch (ParsedNodeException e) {
+            throw new UnexpectedLiquibaseException(e);
+        }
+    }
+
     protected void handleChildNode(ParsedNode node, ResourceAccessor resourceAccessor) throws ParsedNodeException, SetupException {
+        expandExpressions(node);
         String nodeName = node.getName();
         if (nodeName.equals("changeSet")) {
             this.addChangeSet(createChangeSet(node, resourceAccessor));
         } else if (nodeName.equals("include")) {
             String path = node.getChildValue(null, "file", String.class);
+            if (path == null) {
+                throw new UnexpectedLiquibaseException("No 'file' attribute on 'include'");
+            }
             path = path.replace('\\', '/');
             try {
                 include(path, node.getChildValue(null, "relativeToChangelogFile", false), resourceAccessor);
@@ -235,6 +269,31 @@ public class DatabaseChangeLog implements Comparable<DatabaseChangeLog>, Conditi
             } catch (ParsedNodeException e) {
                 e.printStackTrace();
             }
+        } else if (nodeName.equals("property")) {
+            try {
+                String context = node.getChildValue(null, "context", String.class);
+                String dbms = node.getChildValue(null, "dbms", String.class);
+                String labels = node.getChildValue(null, "labels", String.class);
+
+                if (node.getChildValue(null, "file", String.class) == null) {
+                    this.changeLogParameters.set(node.getChildValue(null, "name", String.class), node.getChildValue(null, "value", String.class), context, labels, dbms);
+                } else {
+                    Properties props = new Properties();
+                    InputStream propertiesStream = StreamUtil.singleInputStream(node.getChildValue(null, "file", String.class), resourceAccessor);
+                    if (propertiesStream == null) {
+                        LogFactory.getInstance().getLog().info("Could not open properties file " + node.getChildValue(null, "file", String.class));
+                    } else {
+                        props.load(propertiesStream);
+
+                        for (Map.Entry entry : props.entrySet()) {
+                            this.changeLogParameters.set(entry.getKey().toString(), entry.getValue().toString(), context, labels, dbms);
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                throw new ParsedNodeException(e);
+            }
+
         }
     }
 
@@ -276,7 +335,7 @@ public class DatabaseChangeLog implements Comparable<DatabaseChangeLog>, Conditi
         }
     }
 
-    protected boolean include(String fileName, boolean isRelativePath, ResourceAccessor resourceAccessor) throws LiquibaseException {
+    public boolean include(String fileName, boolean isRelativePath, ResourceAccessor resourceAccessor) throws LiquibaseException {
 
         if (fileName.equalsIgnoreCase(".svn") || fileName.equalsIgnoreCase("cvs")) {
             return false;
@@ -333,4 +392,18 @@ public class DatabaseChangeLog implements Comparable<DatabaseChangeLog>, Conditi
         };
     }
 
+    public void setIgnoreClasspathPrefix(boolean ignoreClasspathPrefix) {
+        this.ignoreClasspathPrefix = ignoreClasspathPrefix;
+    }
+
+    public boolean ignoreClasspathPrefix() {
+        return ignoreClasspathPrefix;
+    }
+
+    protected String normalizePath(String filePath) {
+        if (ignoreClasspathPrefix) {
+            return filePath.replaceFirst("^classpath:", "");
+        }
+        return filePath;
+    }
 }

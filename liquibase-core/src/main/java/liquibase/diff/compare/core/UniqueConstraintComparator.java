@@ -63,7 +63,7 @@ public class UniqueConstraintComparator implements DatabaseObjectComparator {
             }
 
             for (int i=0; i< otherConstraintSize; i++) {
-                if (! DatabaseObjectComparatorFactory.getInstance().isSameObject(new Column().setName(thisConstraint.getColumns().get(i)).setRelation(thisConstraint.getTable()), new Column().setName(otherConstraint.getColumns().get(i)).setRelation(otherConstraint.getTable()), accordingTo)) {
+                if (! DatabaseObjectComparatorFactory.getInstance().isSameObject(thisConstraint.getColumns().get(i).setRelation(thisConstraint.getTable()), otherConstraint.getColumns().get(i).setRelation(otherConstraint.getTable()), accordingTo)) {
                     return false;
                 }
             }
@@ -87,9 +87,11 @@ public class UniqueConstraintComparator implements DatabaseObjectComparator {
     public ObjectDifferences findDifferences(DatabaseObject databaseObject1, DatabaseObject databaseObject2, Database accordingTo, CompareControl compareControl, DatabaseObjectComparatorChain chain, Set<String> exclude) {
         exclude.add("name");
         exclude.add("columns");
+        exclude.add("backingIndex");
         ObjectDifferences differences = chain.findDifferences(databaseObject1, databaseObject2, accordingTo, compareControl, exclude);
 
         differences.compare("columns", databaseObject1, databaseObject2, new ObjectDifferences.DatabaseObjectNameCompareFunction(Column.class, accordingTo));
+        differences.compare("backingIndex", databaseObject1, databaseObject2, new ObjectDifferences.StandardCompareFunction(accordingTo));
         return differences;
     }
 }

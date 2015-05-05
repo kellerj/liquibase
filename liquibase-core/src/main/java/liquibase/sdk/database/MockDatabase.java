@@ -381,6 +381,11 @@ public class MockDatabase implements Database, InternalDatabase {
     }
 
     @Override
+    public String escapeColumnName(String catalogName, String schemaName, String tableName, String columnName, boolean quoteNamesThatMayBeFunctions) {
+        return columnName;
+    }
+
+    @Override
     public String escapeColumnNameList(final String columnNames) {
         return columnNames;
     }
@@ -537,6 +542,11 @@ public class MockDatabase implements Database, InternalDatabase {
         ;
     }
 
+    @Override
+    public void executeRollbackStatements(final SqlStatement[] statements, final List<SqlVisitor> sqlVisitors) throws LiquibaseException, RollbackImpossibleException {
+        ;
+    }
+    
     @Override
     public void saveRollbackStatement(final Change change, final List<SqlVisitor> sqlVisitors, final Writer writer) throws IOException, RollbackImpossibleException, StatementNotSupportedOnDatabaseException, LiquibaseException {
         ;

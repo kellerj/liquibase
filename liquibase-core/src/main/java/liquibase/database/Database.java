@@ -178,6 +178,8 @@ public interface Database extends PrioritizedService {
      */
     String escapeColumnName(String catalogName, String schemaName, String tableName, String columnName);
 
+    String escapeColumnName(String catalogName, String schemaName, String tableName, String columnName, boolean quoteNamesThatMayBeFunctions);
+
     /**
      * Escapes a list of column names in a database-dependent manner so reserved words can be used as a column
      * name (i.e. "return").
@@ -246,6 +248,7 @@ public interface Database extends PrioritizedService {
     void saveStatements(Change change, List<SqlVisitor> sqlVisitors, Writer writer) throws IOException, StatementNotSupportedOnDatabaseException, LiquibaseException;
 
     void executeRollbackStatements(Change change, List<SqlVisitor> sqlVisitors) throws LiquibaseException, RollbackImpossibleException;
+    void executeRollbackStatements(SqlStatement[] statements, List<SqlVisitor> sqlVisitors) throws LiquibaseException, RollbackImpossibleException;
 
     void saveRollbackStatement(Change change, List<SqlVisitor> sqlVisitors, Writer writer) throws IOException, RollbackImpossibleException, StatementNotSupportedOnDatabaseException, LiquibaseException;
 

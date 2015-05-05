@@ -1,5 +1,6 @@
 package liquibase.sqlgenerator.core;
 
+import liquibase.CatalogAndSchema;
 import liquibase.database.Database;
 import liquibase.database.core.*;
 import liquibase.datatype.DatabaseDataType;
@@ -10,6 +11,7 @@ import liquibase.sql.UnparsedSql;
 import liquibase.sqlgenerator.SqlGeneratorChain;
 import liquibase.statement.AutoIncrementConstraint;
 import liquibase.statement.ForeignKeyConstraint;
+import liquibase.statement.SequenceNextValueFunction;
 import liquibase.statement.UniqueConstraint;
 import liquibase.statement.core.CreateTableStatement;
 import liquibase.structure.core.Relation;
@@ -105,8 +107,16 @@ public class CreateTableGenerator extends AbstractSqlGenerator<CreateTableStatem
                 if (database instanceof MSSQLDatabase) {
                     buffer.append(" CONSTRAINT ").append(((MSSQLDatabase) database).generateDefaultConstraintName(statement.getTableName(), column));
                 }
-                buffer.append(" DEFAULT ");
-                buffer.append(statement.getColumnTypes().get(column).objectToSql(defaultValue, database));
+                if (database instanceof OracleDatabase && statement.getDefaultValue(column).toString().startsWith("GENERATED ALWAYS ")) {
+                    buffer.append(" ");
+                } else {
+                    buffer.append(" DEFAULT ");
+                }
+                if (defaultValue instanceof SequenceNextValueFunction) {
+                    buffer.append(database.generateDatabaseFunctionValue((SequenceNextValueFunction) defaultValue));
+                } else {
+                    buffer.append(statement.getColumnTypes().get(column).objectToSql(defaultValue, database));
+                }
             }
 
             if (isAutoIncrementColumn) {
@@ -143,8 +153,16 @@ public class CreateTableGenerator extends AbstractSqlGenerator<CreateTableStatem
                 //buffer.append(" PRIMARY KEY");
             }
 
-            if(database instanceof MySQLDatabase && statement.getColumnRemarks(column) != null){
-                buffer.append(" COMMENT '" + database.escapeStringForDatabase(statement.getColumnRemarks(column)) + "'");
+            if(statement.getColumnRemarks(column) != null){
+                if (database instanceof MySQLDatabase) {
+                    buffer.append(" COMMENT '" + database.escapeStringForDatabase(statement.getColumnRemarks(column)) + "'");
+                } else if (database instanceof MSSQLDatabase) {
+                    String schemaName = new CatalogAndSchema(statement.getCatalogName(), statement.getSchemaName()).standardize(database).getSchemaName();
+                    if (schemaName == null) {
+                        schemaName = database.getDefaultSchemaName();
+                    }
+                    additionalSql.add(new UnparsedSql("EXEC sp_addextendedproperty @name = N'MS_Description', @value = '"+statement.getColumnRemarks(column)+"', @level0type = N'Schema', @level0name = "+ schemaName +", @level1type = N'Table', @level1name = "+statement.getTableName()+", @level2type = N'Column', @level2name = "+column));
+                }
 
             }
 

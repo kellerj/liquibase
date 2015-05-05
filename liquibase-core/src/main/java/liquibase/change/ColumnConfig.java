@@ -6,14 +6,11 @@ import java.text.ParseException;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 import liquibase.parser.core.ParsedNode;
 import liquibase.parser.core.ParsedNodeException;
 import liquibase.resource.ResourceAccessor;
 import liquibase.serializer.AbstractLiquibaseSerializable;
-import liquibase.serializer.LiquibaseSerializable;
-import liquibase.serializer.ReflectionSerializer;
 import liquibase.statement.DatabaseFunction;
 import liquibase.statement.SequenceCurrentValueFunction;
 import liquibase.statement.SequenceNextValueFunction;
@@ -32,6 +29,7 @@ import liquibase.util.StringUtils;
  */
 public class ColumnConfig extends AbstractLiquibaseSerializable {
     private String name;
+    private Boolean computed;
     private String type;
     private String value;
     private Number valueNumeric;
@@ -63,15 +61,23 @@ public class ColumnConfig extends AbstractLiquibaseSerializable {
      */
     public ColumnConfig(Column columnSnapshot) {
         setName(columnSnapshot.getName());
-        setType(columnSnapshot.getType().toString());
+        setComputed(columnSnapshot.getComputed());
+        if (columnSnapshot.getType() != null) {
+            setType(columnSnapshot.getType().toString());
+        }
 
         if (columnSnapshot.getRelation() != null && columnSnapshot.getRelation() instanceof Table) {
             if (columnSnapshot.getDefaultValue() != null) {
                 setDefaultValue(columnSnapshot.getDefaultValue().toString());
             }
+
+            boolean nonDefaultConstraints = false;
             ConstraintsConfig constraints = new ConstraintsConfig();
 
-            constraints.setNullable(columnSnapshot.isNullable());
+            if (columnSnapshot.isNullable() != null && !columnSnapshot.isNullable()) {
+                constraints.setNullable(columnSnapshot.isNullable());
+                nonDefaultConstraints = true;
+            }
 
             if (columnSnapshot.isAutoIncrement()) {
                 setAutoIncrement(true);
@@ -88,6 +94,7 @@ public class ColumnConfig extends AbstractLiquibaseSerializable {
                 constraints.setPrimaryKey(true);
                 constraints.setPrimaryKeyName(primaryKey.getName());
                 constraints.setPrimaryKeyTablespace(primaryKey.getTablespace());
+                nonDefaultConstraints = true;
             }
 
             List<UniqueConstraint> uniqueConstraints = table.getUniqueConstraints();
@@ -96,6 +103,7 @@ public class ColumnConfig extends AbstractLiquibaseSerializable {
                     if (constraint.getColumnNames().contains(getName())) {
                         constraints.setUnique(true);
                         constraints.setUniqueConstraintName(constraint.getName());
+                        nonDefaultConstraints = true;
                     }
                 }
             }
@@ -103,20 +111,23 @@ public class ColumnConfig extends AbstractLiquibaseSerializable {
             List<ForeignKey> fks = table.getOutgoingForeignKeys();
             if (fks != null) {
                 for (ForeignKey fk : fks) {
-                    if (fk.getForeignKeyColumns().equals(getName())) {
+                    if (fk.getForeignKeyColumns() != null && fk.getForeignKeyColumns().size() == 1 && fk.getForeignKeyColumns().get(0).getName().equals(getName())) {
                         constraints.setForeignKeyName(fk.getName());
-                        constraints.setReferences(fk.getPrimaryKeyTable().getName() + "(" + fk.getPrimaryKeyColumns() + ")");
+                        constraints.setReferences(fk.getPrimaryKeyTable().getName() + "(" + fk.getPrimaryKeyColumns().get(0).getName() + ")");
+                        nonDefaultConstraints = true;
                     }
                 }
             }
 
-            if (constraints.isPrimaryKey() == null) {
-                constraints.setPrimaryKey(false);
+//            if (constraints.isPrimaryKey() == null) {
+//                constraints.setPrimaryKey(false);
+//            }
+//            if (constraints.isUnique() == null) {
+//                constraints.setUnique(false);
+//            }
+            if (nonDefaultConstraints) {
+                setConstraints(constraints);
             }
-            if (constraints.isUnique() == null) {
-                constraints.setUnique(false);
-            }
-            setConstraints(constraints);
         }
 
         setRemarks(columnSnapshot.getRemarks());
@@ -140,6 +151,20 @@ public class ColumnConfig extends AbstractLiquibaseSerializable {
 
     public ColumnConfig setName(String name) {
         this.name = name;
+        return this;
+    }
+
+    public ColumnConfig setName(String name, boolean computed) {
+        setComputed(computed);
+        return setName(name);
+    }
+
+    public Boolean getComputed() {
+        return computed;
+    }
+
+    public ColumnConfig setComputed(Boolean computed) {
+        this.computed = computed;
         return this;
     }
 
@@ -204,7 +229,7 @@ public class ColumnConfig extends AbstractLiquibaseSerializable {
             }
 
             try {
-                this.valueNumeric = NumberFormat.getInstance(Locale.US).parse(valueNumeric);
+                this.valueNumeric = ValueNumeric.of(Locale.US, valueNumeric);
             } catch (ParseException e) {
                 this.valueComputed = new DatabaseFunction(valueNumeric);
             }
@@ -217,6 +242,70 @@ public class ColumnConfig extends AbstractLiquibaseSerializable {
         this.valueNumeric = valueNumeric;
 
         return this;
+    }
+    
+	public static class ValueNumeric extends Number {
+		private static final long serialVersionUID = 1381154777956917462L;
+		
+		private final Number delegate;
+		private final String value;
+
+		private static ValueNumeric of(Locale locale, String value) throws ParseException {
+			final Number parsedNumber = NumberFormat.getInstance(locale)
+					.parse(value);
+			return new ValueNumeric(value, parsedNumber);
+		}
+
+		private ValueNumeric(final String value, final Number numeric) {
+			this.delegate = numeric;
+			this.value = value;
+		}
+
+		@Override
+		public double doubleValue() {
+			return delegate.doubleValue();
+		}
+
+		@Override
+		public float floatValue() {
+			return delegate.floatValue();
+		}
+
+		@Override
+		public int intValue() {
+			return delegate.intValue();
+		}
+
+		@Override
+		public long longValue() {
+			return delegate.longValue();
+		}
+
+		@Override
+		public String toString() {
+			return value;
+		}
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == null) {
+                return false;
+            }
+
+            if (!(obj instanceof Number)) {
+                return false;
+            }
+            return obj.toString().equals(this.toString());
+        }
+
+        @Override
+        public int hashCode() {
+            return this.toString().hashCode();
+        }
+
+        public Number getDelegate() {
+          return delegate;
+        }
     }
 
     /**
@@ -445,7 +534,7 @@ public class ColumnConfig extends AbstractLiquibaseSerializable {
                     defaultValueNumeric = defaultValueNumeric.replaceFirst("\\)$", "");
                 }
                 try {
-                    this.defaultValueNumeric = NumberFormat.getInstance(Locale.US).parse(defaultValueNumeric);
+                    this.defaultValueNumeric = ValueNumeric.of(Locale.US, defaultValueNumeric);
                 } catch (ParseException e) {
                     this.defaultValueComputed = new DatabaseFunction(defaultValueNumeric);
                 }
@@ -667,6 +756,7 @@ public class ColumnConfig extends AbstractLiquibaseSerializable {
     @Override
     public void load(ParsedNode parsedNode, ResourceAccessor resourceAccessor) throws ParsedNodeException {
         name = parsedNode.getChildValue(null, "name", String.class);
+        computed = parsedNode.getChildValue(null, "computed", Boolean.class);
         type = parsedNode.getChildValue(null, "type", String.class);
         encoding = parsedNode.getChildValue(null, "encoding", String.class);
         autoIncrement = parsedNode.getChildValue(null, "autoIncrement", Boolean.class);
@@ -679,11 +769,9 @@ public class ColumnConfig extends AbstractLiquibaseSerializable {
         if (value == null) {
             value = StringUtils.trimToNull((String) parsedNode.getValue());
         }
-        try {
-            valueNumeric = parsedNode.getChildValue(null, "valueNumeric", Double.class);
-        } catch (ParsedNodeException e) {
-            valueComputed = new DatabaseFunction(parsedNode.getChildValue(null, "valueNumeric", String.class));
-        }
+        
+        setValueNumeric(parsedNode.getChildValue(null, "valueNumeric", String.class));
+
         try {
             valueDate = parsedNode.getChildValue(null, "valueDate", Date.class);
         } catch (ParsedNodeException e) {
@@ -707,11 +795,9 @@ public class ColumnConfig extends AbstractLiquibaseSerializable {
 
 
         defaultValue = parsedNode.getChildValue(null, "defaultValue", String.class);
-        try {
-            defaultValueNumeric = parsedNode.getChildValue(null, "defaultValueNumeric", Double.class);
-        } catch (ParsedNodeException e) {
-            defaultValueComputed = new DatabaseFunction(parsedNode.getChildValue(null, "defaultValueNumeric", String.class));
-        }
+        
+        setDefaultValueNumeric(parsedNode.getChildValue(null, "defaultValueNumeric", String.class));
+
         try {
             defaultValueDate = parsedNode.getChildValue(null, "defaultValueDate", Date.class);
         } catch (ParsedNodeException e) {
@@ -754,4 +840,15 @@ public class ColumnConfig extends AbstractLiquibaseSerializable {
 
     }
 
+    public static ColumnConfig[] arrayFromNames(String names) {
+        if (names == null) {
+            return null;
+        }
+        List<String> nameArray = StringUtils.splitAndTrim(names, ",");
+        ColumnConfig[] returnArray = new ColumnConfig[nameArray.size()];
+        for (int i=0; i<nameArray.size(); i++) {
+            returnArray[i] = new ColumnConfig().setName(nameArray.get(i));
+        }
+        return returnArray;
+    }
 }

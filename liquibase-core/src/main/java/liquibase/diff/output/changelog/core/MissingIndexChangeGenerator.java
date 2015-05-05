@@ -58,10 +58,8 @@ public class MissingIndexChangeGenerator implements MissingObjectChangeGenerator
 //            continue;
 //        }
 
-        for (String columnName : index.getColumns()) {
-            AddColumnConfig column = new AddColumnConfig();
-            column.setName(columnName);
-            change.addColumn(column);
+        for (Column column : index.getColumns()) {
+            change.addColumn(new AddColumnConfig(column));
         }
 
         return new Change[] { change };
